@@ -1,0 +1,81 @@
+# OCPP Charger Simulator
+
+Standalone **OCPP 1.6J charger simulator** with a web UI and Python backend. It simulates one or more charge points and connects to any OCPP 1.6J CSMS over WebSocket. Use it for development and testing alongside your CSMS on the same machine.
+
+## Prerequisites
+
+- **Node.js** and **npm** (or bun) — for the frontend
+- **Python 3.11+** — for the backend
+- **Docker** and **Docker Compose** (optional) — for containerised runs
+
+## Ports
+
+To avoid clashes with a CSMS running on the same machine:
+
+| Service    | Backend port | Frontend port |
+| ---------- | ------------ | ------------- |
+| CSMS       | 8000         | 5173          |
+| Simulator  | **8001**     | **8080**      |
+
+## Running locally
+
+### Backend
+
+From the project root:
+
+```bash
+cd backend
+make install
+make run
+```
+
+Or from the root: `make -C backend run`.
+
+The API runs at **http://localhost:8001**. Optional: copy `backend/.env.example` to `backend/.env` and set `PORT=8001` (or another port).
+
+### Frontend
+
+In a separate terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The UI is at **http://localhost:8080**.
+
+## Docker
+
+Build and run the simulator (backend serves the built frontend):
+
+```bash
+docker compose up --build
+```
+
+- **API and UI**: http://localhost:8001  
+- **Health**: http://localhost:8001/health  
+
+Ports 8000 and 5173 are left free for the CSMS.
+
+## Testing
+
+- **Backend**: `cd backend && make test` (placeholder for now; tests will be added in Phase 7).
+- **Frontend**: `cd frontend && npm run test`.
+
+## Project structure
+
+```
+charger-sim-ocpp/
+├── backend/          FastAPI service (health, future OCPP simulator logic)
+├── frontend/         React + Vite + TypeScript UI
+├── data/             Optional CSV/JSON for charger and vehicle import
+├── plans/            Implementation and OCPP design docs
+├── Dockerfile        Multi-stage build (frontend + backend)
+├── docker-compose.yml
+└── README.md
+```
+
+## Next steps
+
+See [plans/Implementation_plan.md](plans/Implementation_plan.md) for Phase 2 (core simulator engine, OCPP client, EVSE state machine, meter values) and later phases.

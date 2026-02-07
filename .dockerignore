@@ -1,0 +1,32 @@
+# Dependencies and build artifacts
+node_modules/
+frontend/node_modules/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+frontend/dist/
+build/
+*.egg
+
+# Git and IDE
+.git/
+.gitignore
+.cursor/
+*.swp
+.DS_Store
+
+# Env and secrets
+.env
+.env.local
+*.pem
+
+# Test and coverage
+.coverage
+htmlcov/
+.pytest_cache/
+frontend/coverage/
+
+# Docs and plans (optional: remove if you want them in image)
+# plans/

@@ -1,0 +1,27 @@
+# SQLite dev database
+*.db
+
+# Python
+__pycache__/
+.venv/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# IDE / OS
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Env (keep .env.example)
+.env
+.env.local
+
+# Frontend
+node_modules/
+frontend/dist/
+
+# Logs
+*.log
