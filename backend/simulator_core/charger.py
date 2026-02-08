@@ -90,6 +90,13 @@ class Charger:
                 return evse
         return None
 
+    def get_evse_by_transaction_id(self, transaction_id: int) -> Optional[EVSE]:
+        """Return EVSE with the given transaction_id or None."""
+        for evse in self.evses:
+            if evse.transaction_id == transaction_id:
+                return evse
+        return None
+
     def get_meter_interval_s(self) -> float:
         """Configurable meter interval (default 10s)."""
         return float(self.config.get("meter_interval_s", 10.0))

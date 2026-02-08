@@ -1,4 +1,4 @@
-"""Async OCPP 1.6 charge point client: Boot, Status, Authorize, Start/StopTransaction, MeterValues, SetChargingProfile."""
+"""Async OCPP 1.6 charge point client: Boot, Status, Authorize, Start/StopTransaction, MeterValues, SetChargingProfile, RemoteStartTransaction, RemoteStopTransaction."""
 import asyncio
 import json
 import logging
@@ -15,6 +15,7 @@ from ocpp.v16.enums import (
     ChargingProfileStatus,
     Measurand,
     Reason,
+    RemoteStartStopStatus,
     UnitOfMeasure,
 )
 
@@ -143,7 +144,7 @@ def _dict_to_meter_values_payload(d: DictMeterPayload) -> call.MeterValuesPayloa
 class SimulatorChargePoint(ChargePoint):
     """
     OCPP 1.6 charge point client: sends Boot/Status/StartTx/StopTx/MeterValues,
-    handles Authorize (dummy) and SetChargingProfile.
+    handles Authorize, SetChargingProfile, RemoteStartTransaction, RemoteStopTransaction.
     """
 
     def __init__(self, charge_point_id: str, connection: Any, response_timeout: int = 30) -> None:
@@ -217,6 +218,61 @@ class SimulatorChargePoint(ChargePoint):
         except (TypeError, KeyError, ValueError) as e:
             LOG.warning("SetChargingProfile parse error: %s", e)
             return call_result.SetChargingProfilePayload(status=ChargingProfileStatus.rejected)
+
+    @on(Action.RemoteStartTransaction)
+    async def on_remote_start_transaction(
+        self,
+        id_tag: str,
+        **kwargs: Any,
+    ) -> call_result.RemoteStartTransactionPayload:
+        """Handle RemoteStartTransaction from CSMS: start charging on target EVSE.
+
+        We schedule start_transaction as a background task because the OCPP message loop
+        is sequential: it cannot recv() the StartTransactionResponse while blocked in this
+        handler. Returning immediately allows the loop to process the subsequent
+        StartTransaction request/response.
+        """
+        connector_id = kwargs.get("connector_id") or kwargs.get("connectorId")
+        if not self._charger:
+            return call_result.RemoteStartTransactionPayload(status=RemoteStartStopStatus.rejected)
+        evse: Optional[EVSE] = None
+        if connector_id is not None:
+            evse = self._charger.get_evse(int(connector_id))
+        else:
+            for e in self._charger.evses:
+                if e.state == EvseState.Available and e.transaction_id is None:
+                    evse = e
+                    break
+        if not evse or evse.transaction_id is not None:
+            return call_result.RemoteStartTransactionPayload(status=RemoteStartStopStatus.rejected)
+        connector_id = evse.evse_id
+        asyncio.create_task(self.start_transaction(connector_id, id_tag))
+        return call_result.RemoteStartTransactionPayload(status=RemoteStartStopStatus.accepted)
+
+    @on(Action.RemoteStopTransaction)
+    async def on_remote_stop_transaction(
+        self,
+        transaction_id: int,
+        **kwargs: Any,
+    ) -> call_result.RemoteStopTransactionPayload:
+        """Handle RemoteStopTransaction from CSMS: stop charging, send StopTransaction.
+
+        We schedule stop_transaction as a background task for the same reason as
+        RemoteStartTransaction: the OCPP message loop cannot recv() the
+        StopTransaction response while blocked in this handler.
+        """
+        if not self._charger:
+            return call_result.RemoteStopTransactionPayload(status=RemoteStartStopStatus.rejected)
+        evse = self._charger.get_evse_by_transaction_id(transaction_id)
+        if not evse:
+            return call_result.RemoteStopTransactionPayload(status=RemoteStartStopStatus.rejected)
+        connector_id = evse.evse_id
+        asyncio.create_task(self._stop_transaction_remote(connector_id))
+        return call_result.RemoteStopTransactionPayload(status=RemoteStartStopStatus.accepted)
+
+    async def _stop_transaction_remote(self, connector_id: int) -> None:
+        """Background task: stop transaction with reason=remote (called from RemoteStopTransaction handler)."""
+        await self.stop_transaction(connector_id, reason=Reason.remote)
 
     async def start_transaction(self, connector_id: int, id_tag: str) -> Optional[int]:
         """
