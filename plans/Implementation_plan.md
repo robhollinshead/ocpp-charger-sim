@@ -388,6 +388,7 @@ These may be added later but are **not** required for the initial implementation
 
 - **Connection retries**: Add an optional cap on WebSocket connection retries (e.g. max N attempts or “give up after M minutes”) so that “Connect” does not retry indefinitely if the CSMS is permanently unavailable. For now, retries use exponential back-off with no cap.
 - **Authorize before StartTransaction**: Optional pre-authorisation flow where the charger sends an Authorize request to the CSMS before StartTransaction. Currently idTag is validated only when StartTransaction is sent. Authorize can be added later for idTag validation and caching.
+- **Include SoC On Metering**: add vehicle info to make SoC updates realistic
 - **UI Updates on Websockets**: make the UI update based on websockets and not constant GET requests
 - OCPP 2.0.1 support
 - ISO-15118 vehicle integration

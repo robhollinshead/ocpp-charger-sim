@@ -450,7 +450,11 @@ async def connect_charge_point(charger: Charger, url: str) -> None:
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            LOG.warning("Message loop error: %s", e)
+            # Normal WebSocket closure (e.g. user clicked Disconnect) raises with "1000 (OK)"
+            if "1000" in str(e) and "OK" in str(e):
+                LOG.debug("Connection closed normally: %s", e)
+            else:
+                LOG.warning("Message loop error: %s", e)
         finally:
             charger.clear_ocpp_client()
 
