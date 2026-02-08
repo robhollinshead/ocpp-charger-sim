@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   Charger,
+  ChargerConfigUpdate,
   ChargerCreate,
   ChargerDetailResponse,
   ChargerResponse,
@@ -52,6 +53,16 @@ export async function updateCharger(chargePointId: string, payload: ChargerUpdat
     body: JSON.stringify(payload),
   });
   return mapResponseToCharger(data);
+}
+
+export async function updateChargerConfig(
+  chargePointId: string,
+  payload: ChargerConfigUpdate
+): Promise<ChargerDetailResponse> {
+  return apiFetch<ChargerDetailResponse>(`${API_PREFIX}/chargers/${chargePointId}/config`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function connectCharger(chargePointId: string): Promise<{ status: string; charge_point_id: string }> {
@@ -170,6 +181,18 @@ export function useUpdateCharger(locationId: string | undefined) {
         queryClient.invalidateQueries({ queryKey: chargersQueryKey(locationId) });
       }
       queryClient.invalidateQueries({ queryKey: ['chargers', 'detail', variables.chargePointId] });
+    },
+  });
+}
+
+export function useUpdateChargerConfig(chargePointId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ChargerConfigUpdate) => updateChargerConfig(chargePointId!, payload),
+    onSuccess: () => {
+      if (chargePointId) {
+        queryClient.invalidateQueries({ queryKey: ['chargers', 'detail', chargePointId] });
+      }
     },
   });
 }

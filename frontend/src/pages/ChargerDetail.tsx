@@ -228,7 +228,7 @@ export default function ChargerDetail() {
 
           <TabsContent value="config" className="space-y-6">
             <ChargerDetailsEdit charger={charger} locationId={locationId!} />
-            <ConfigurationTab />
+            <ConfigurationTab charger={charger} />
           </TabsContent>
           <TabsContent value="logs">
             <LogsTab chargePointId={chargerId} />

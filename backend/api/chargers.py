@@ -17,13 +17,16 @@ from repositories.charger_repository import (
     list_chargers_by_location as repo_list_chargers_by_location,
     list_evses_by_charger_id as repo_list_evses_by_charger_id,
     update_charger as repo_update_charger,
+    update_charger_config as repo_update_charger_config,
 )
 from repositories.location_repository import get_location
 from schemas.chargers import (
+    ChargerConfigUpdate,
     ChargerCreate,
     ChargerDetail,
     ChargerSummary,
     ChargerUpdate,
+    DEFAULT_CHARGER_CONFIG,
     EvseStatus,
     MeterSnapshot,
     OCPPLogEntry,
@@ -55,14 +58,20 @@ def _hydrate_charger(db: Session, charge_point_id: str) -> SimCharger | None:
             EVSE(evse_id=e.evse_id, max_power_W=22000.0, voltage_V=230.0)
             for e in evse_rows
         ]
+    config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
+    if "voltage_V" not in config:
+        config = {**config, "voltage_V": 230.0}
     sim = SimCharger(
         charge_point_id=row.charge_point_id,
         evses=evses,
         csms_url=row.connection_url,
-        config={"meter_interval_s": 10.0, "voltage_V": 230.0},
+        config=config,
         location_id=row.location_id,
         charger_name=row.charger_name,
         ocpp_version=row.ocpp_version,
+        charge_point_vendor=row.charge_point_vendor or "FastCharge",
+        charge_point_model=row.charge_point_model or "Pro 150",
+        firmware_version=row.firmware_version or "2.4.1",
     )
     store_add(sim)
     return sim
@@ -107,6 +116,9 @@ def _sim_charger_to_detail(c: SimCharger, location_id: str, connection_url: str,
         charger_name=charger_name,
         ocpp_version=ocpp_version,
         location_id=location_id,
+        charge_point_vendor=getattr(c, "charge_point_vendor", "FastCharge"),
+        charge_point_model=getattr(c, "charge_point_model", "Pro 150"),
+        firmware_version=getattr(c, "firmware_version", "2.4.1"),
         evses=evse_statuses,
         config=c.config,
         connected=c.is_connected,
@@ -166,6 +178,9 @@ def create_charger(
             charger_name=body.charger_name,
             ocpp_version=body.ocpp_version,
             evse_count=body.evse_count,
+            charge_point_vendor=body.charge_point_vendor,
+            charge_point_model=body.charge_point_model,
+            firmware_version=body.firmware_version,
         )
     except IntegrityError as e:
         if "charge_point_id" in str(e) or "unique" in str(e).lower():
@@ -178,14 +193,19 @@ def create_charger(
         EVSE(evse_id=i, max_power_W=22000.0, voltage_V=230.0)
         for i in range(1, body.evse_count + 1)
     ]
+    config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
+    config.setdefault("voltage_V", 230.0)
     sim = SimCharger(
         charge_point_id=row.charge_point_id,
         evses=evses,
         csms_url=row.connection_url,
-        config={"meter_interval_s": 10.0, "voltage_V": 230.0},
+        config=config,
         location_id=row.location_id,
         charger_name=row.charger_name,
         ocpp_version=row.ocpp_version,
+        charge_point_vendor=row.charge_point_vendor or "FastCharge",
+        charge_point_model=row.charge_point_model or "Pro 150",
+        firmware_version=row.firmware_version or "2.4.1",
     )
     store_add(sim)
     return _sim_charger_to_summary(
@@ -340,13 +360,46 @@ def clear_charger_logs(charge_point_id: str, db: Session = Depends(get_db)) -> N
     sim.clear_ocpp_log()
 
 
+@router.patch("/chargers/{charge_point_id}/config", response_model=ChargerDetail)
+def update_charger_config(
+    charge_point_id: str,
+    body: ChargerConfigUpdate,
+    db: Session = Depends(get_db),
+) -> ChargerDetail:
+    """Update charger OCPP config. Merges provided keys into stored config."""
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        # No changes; return current detail.
+        sim = _hydrate_charger(db, charge_point_id)
+        if sim is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
+        row = repo_get_charger(db, charge_point_id)
+        assert row is not None
+        return _sim_charger_to_detail(
+            sim, row.location_id, row.connection_url, row.charger_name, row.ocpp_version
+        )
+    row = repo_update_charger_config(db, charge_point_id, updates)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
+    sim = store_get_by_id(charge_point_id)
+    if sim and isinstance(sim.config, dict):
+        sim.config = {**sim.config, **updates}
+    if sim is None:
+        sim = _hydrate_charger(db, charge_point_id)
+    if sim is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
+    return _sim_charger_to_detail(
+        sim, row.location_id, row.connection_url, row.charger_name, row.ocpp_version
+    )
+
+
 @router.patch("/chargers/{charge_point_id}", response_model=ChargerDetail)
 def update_charger(
     charge_point_id: str,
     body: ChargerUpdate,
     db: Session = Depends(get_db),
 ) -> ChargerDetail:
-    """Update charger attributes."""
+    """Update charger attributes (identity fields not editable)."""
     row = repo_update_charger(
         db,
         charge_point_id,
@@ -367,14 +420,19 @@ def update_charger(
         return _sim_charger_to_detail(
             sim, row.location_id, row.connection_url, row.charger_name, row.ocpp_version
         )
+    config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
     return _sim_charger_to_detail(
         SimCharger(
             charge_point_id=row.charge_point_id,
             evses=[],
             csms_url=row.connection_url,
+            config=config,
             location_id=row.location_id,
             charger_name=row.charger_name,
             ocpp_version=row.ocpp_version,
+            charge_point_vendor=row.charge_point_vendor or "FastCharge",
+            charge_point_model=row.charge_point_model or "Pro 150",
+            firmware_version=row.firmware_version or "2.4.1",
         ),
         row.location_id,
         row.connection_url,

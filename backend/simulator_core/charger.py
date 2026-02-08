@@ -20,6 +20,9 @@ class Charger:
         "location_id",
         "charger_name",
         "ocpp_version",
+        "charge_point_vendor",
+        "charge_point_model",
+        "firmware_version",
         "_ocpp_client",
         "_stop_connect",
         "_ocpp_log",
@@ -34,6 +37,9 @@ class Charger:
         location_id: Optional[str] = None,
         charger_name: Optional[str] = None,
         ocpp_version: str = "1.6",
+        charge_point_vendor: str = "FastCharge",
+        charge_point_model: str = "Pro 150",
+        firmware_version: str = "2.4.1",
     ) -> None:
         self.charge_point_id = charge_point_id
         self.evses = list(evses) if evses else []
@@ -42,6 +48,9 @@ class Charger:
         self.location_id = location_id
         self.charger_name = charger_name
         self.ocpp_version = ocpp_version
+        self.charge_point_vendor = charge_point_vendor
+        self.charge_point_model = charge_point_model
+        self.firmware_version = firmware_version
         self._ocpp_client: Any = None  # Optional running OCPP client
         self._stop_connect = False
         self._ocpp_log: list[dict[str, Any]] = []  # Session-scoped OCPP message log
@@ -98,8 +107,12 @@ class Charger:
         return None
 
     def get_meter_interval_s(self) -> float:
-        """Configurable meter interval (default 10s)."""
-        return float(self.config.get("meter_interval_s", 10.0))
+        """MeterValues sample interval in seconds (default 30s)."""
+        return float(self.config.get("MeterValuesSampleInterval", 30))
+
+    def get_heartbeat_interval_s(self) -> int:
+        """Heartbeat interval in seconds (default 120s)."""
+        return int(self.config.get("HeartbeatInterval", 120))
 
     def get_voltage_V(self) -> float:
         """Default voltage for EVSEs (e.g. 230 AC, 400 DC)."""

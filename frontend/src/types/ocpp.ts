@@ -39,6 +39,9 @@ export interface ChargerCreate {
   charger_name: string;
   ocpp_version?: string;
   evse_count?: number;
+  charge_point_vendor?: string;
+  charge_point_model?: string;
+  firmware_version?: string;
 }
 
 /** Supported OCPP versions. */
@@ -73,10 +76,23 @@ export interface EvseStatusResponse {
   meter: { energy_Wh: number; power_W: number; voltage_V: number; current_A: number };
 }
 
-/** Raw charger detail from API (includes evses, config). */
+/** Raw charger detail from API (includes evses, config, identity). */
 export interface ChargerDetailResponse extends ChargerResponse {
+  charge_point_vendor?: string;
+  charge_point_model?: string;
+  firmware_version?: string;
   evses: EvseStatusResponse[];
   config: Record<string, string | number | boolean>;
+}
+
+/** Payload for updating charger OCPP config (API request). */
+export interface ChargerConfigUpdate {
+  HeartbeatInterval?: number;
+  ConnectionTimeOut?: number;
+  MeterValuesSampleInterval?: number;
+  ClockAlignedDataInterval?: number;
+  AuthorizeRemoteTxRequests?: boolean;
+  LocalAuthListEnabled?: boolean;
 }
 
 

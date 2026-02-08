@@ -161,10 +161,14 @@ class SimulatorChargePoint(ChargePoint):
         return self._transaction_id_counter
 
     async def send_boot_notification(self) -> call_result.BootNotificationPayload:
-        """Send BootNotification on connect."""
+        """Send BootNotification on connect (vendor, model, firmware from charger)."""
+        vendor = getattr(self._charger, "charge_point_vendor", None) or "FastCharge"
+        model = getattr(self._charger, "charge_point_model", None) or "Pro 150"
+        firmware = getattr(self._charger, "firmware_version", None) or "2.4.1"
         req = call.BootNotificationPayload(
-            charge_point_vendor="ocpp-sim",
-            charge_point_model="simulator",
+            charge_point_vendor=vendor,
+            charge_point_model=model,
+            firmware_version=firmware,
         )
         return await self.call(req)
 
@@ -427,8 +431,22 @@ async def connect_charge_point(charger: Charger, url: str) -> None:
                 status = evse.state if evse.state else EvseState.Available
                 await cp.send_status_notification(evse.evse_id, status)
 
+        async def heartbeat_loop() -> None:
+            """Send Heartbeat every HeartbeatInterval seconds until cancelled."""
+            interval = charger.get_heartbeat_interval_s()
+            while True:
+                try:
+                    await asyncio.sleep(interval)
+                    req = call.HeartbeatPayload()
+                    await cp.call(req)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    LOG.debug("Heartbeat error (connection may be closed): %s", e)
+                    break
+
         try:
-            await asyncio.gather(cp.start(), boot_and_status())
+            await asyncio.gather(cp.start(), boot_and_status(), heartbeat_loop())
         except asyncio.CancelledError:
             raise
         except Exception as e:

@@ -4,6 +4,17 @@ from typing import Optional
 from simulator_core.charger import Charger
 from simulator_core.evse import EVSE
 
+# Default config when seeding (matches DEFAULT_CHARGER_CONFIG in schemas).
+_DEFAULT_CONFIG = {
+    "HeartbeatInterval": 120,
+    "ConnectionTimeOut": 60,
+    "MeterValuesSampleInterval": 30,
+    "ClockAlignedDataInterval": 900,
+    "AuthorizeRemoteTxRequests": True,
+    "LocalAuthListEnabled": True,
+    "voltage_V": 230.0,
+}
+
 
 _store: dict[str, Charger] = {}
 
@@ -58,6 +69,9 @@ def seed_default() -> None:
     charger = Charger(
         charge_point_id="CP_001",
         evses=evses,
-        config={"meter_interval_s": 10.0, "voltage_V": 230.0},
+        config=dict(_DEFAULT_CONFIG),
+        charge_point_vendor="FastCharge",
+        charge_point_model="Pro 150",
+        firmware_version="2.4.1",
     )
     add(charger)

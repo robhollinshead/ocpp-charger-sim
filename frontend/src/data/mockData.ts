@@ -1,4 +1,4 @@
-import { OCPPLog, Transaction, ChargingScenario, ChargerConfig } from '@/types/ocpp';
+import { OCPPLog, Transaction, ChargingScenario } from '@/types/ocpp';
 
 export const ocppLogs: OCPPLog[] = [
   { id: '1', timestamp: '2024-01-15T10:30:00Z', direction: 'incoming', messageType: 'Heartbeat', payload: '{}', status: 'success' },
@@ -21,17 +21,4 @@ export const chargingScenarios: ChargingScenario[] = [
   { id: 'scen-2', name: 'Peak Hour Rush', description: 'Simulates high demand during peak commute hours', vehicleCount: 50, duration: '2 hours', pattern: 'burst' },
   { id: 'scen-3', name: 'Random Daily Usage', description: 'Simulates typical daily charging patterns', vehicleCount: 30, duration: '12 hours', pattern: 'random' },
   { id: 'scen-4', name: 'Stress Test', description: 'Maximum capacity test for all chargers', vehicleCount: 100, duration: '1 hour', pattern: 'burst' },
-];
-
-export const chargerConfigs: ChargerConfig[] = [
-  { key: 'HeartbeatInterval', value: '30', readonly: false, type: 'number' },
-  { key: 'ConnectionTimeOut', value: '60', readonly: false, type: 'number' },
-  { key: 'MeterValueSampleInterval', value: '10', readonly: false, type: 'number' },
-  { key: 'ClockAlignedDataInterval', value: '900', readonly: false, type: 'number' },
-  { key: 'AuthorizeRemoteTxRequests', value: 'true', readonly: false, type: 'boolean' },
-  { key: 'LocalAuthListEnabled', value: 'true', readonly: false, type: 'boolean' },
-  { key: 'ChargePointId', value: 'CP-001', readonly: true, type: 'string' },
-  { key: 'ChargePointVendor', value: 'FastCharge', readonly: true, type: 'string' },
-  { key: 'ChargePointModel', value: 'Pro 150', readonly: true, type: 'string' },
-  { key: 'FirmwareVersion', value: '2.4.1', readonly: true, type: 'string' },
 ];

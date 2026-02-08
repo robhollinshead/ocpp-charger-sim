@@ -24,6 +24,7 @@ from repositories.charger_repository import (
     list_evses_by_charger_id as repo_list_evses_by_charger_id,
 )
 from repositories.location_repository import count_locations, create_location as repo_create_location
+from schemas.chargers import DEFAULT_CHARGER_CONFIG
 from schemas.health import HealthResponse
 from simulator_core.charger import Charger as SimCharger
 from simulator_core.evse import EVSE
@@ -88,14 +89,19 @@ def _load_chargers_from_db() -> None:
                     EVSE(evse_id=e.evse_id, max_power_W=22000.0, voltage_V=230.0)
                     for e in evse_rows
                 ]
+            config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
+            config.setdefault("voltage_V", 230.0)
             sim = SimCharger(
                 charge_point_id=row.charge_point_id,
                 evses=evses,
                 csms_url=row.connection_url,
-                config={"meter_interval_s": 10.0, "voltage_V": 230.0},
+                config=config,
                 location_id=row.location_id,
                 charger_name=row.charger_name,
                 ocpp_version=row.ocpp_version,
+                charge_point_vendor=row.charge_point_vendor or "FastCharge",
+                charge_point_model=row.charge_point_model or "Pro 150",
+                firmware_version=row.firmware_version or "2.4.1",
             )
             store_add(sim)
     finally:

@@ -1,11 +1,12 @@
 """Charger repository: list, get, create, update, delete."""
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from models.charger import Charger as ChargerModel
 from models.evse import Evse as EvseModel
+from schemas.chargers import DEFAULT_CHARGER_CONFIG
 
 
 def create_charger(
@@ -17,6 +18,9 @@ def create_charger(
     charger_name: str,
     ocpp_version: str = "1.6",
     evse_count: int = 1,
+    charge_point_vendor: str = "FastCharge",
+    charge_point_model: str = "Pro 150",
+    firmware_version: str = "2.4.1",
 ) -> ChargerModel:
     """Create a charger with evse_count EVSEs (evse_id 1..evse_count), commit, and return it."""
     charger = ChargerModel(
@@ -25,6 +29,10 @@ def create_charger(
         connection_url=connection_url,
         charger_name=charger_name,
         ocpp_version=ocpp_version,
+        charge_point_vendor=charge_point_vendor,
+        charge_point_model=charge_point_model,
+        firmware_version=firmware_version,
+        config=dict(DEFAULT_CHARGER_CONFIG),
     )
     session.add(charger)
     session.flush()  # get charger.id before adding evses
@@ -70,6 +78,23 @@ def update_charger(
         charger.charger_name = charger_name
     if ocpp_version is not None:
         charger.ocpp_version = ocpp_version
+    session.commit()
+    session.refresh(charger)
+    return charger
+
+
+def update_charger_config(
+    session: Session,
+    charge_point_id: str,
+    config_updates: dict[str, Any],
+) -> Optional[ChargerModel]:
+    """Merge config_updates into charger config and save. Returns updated charger or None."""
+    charger = get_charger_by_charge_point_id(session, charge_point_id)
+    if charger is None:
+        return None
+    current = charger.config or {}
+    merged = {**current, **config_updates}
+    charger.config = merged
     session.commit()
     session.refresh(charger)
     return charger

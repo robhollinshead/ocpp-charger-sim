@@ -2,6 +2,17 @@
 from pydantic import BaseModel, Field
 
 
+# Default OCPP config (single source of truth for new and backfilled chargers).
+DEFAULT_CHARGER_CONFIG: dict = {
+    "HeartbeatInterval": 120,
+    "ConnectionTimeOut": 60,
+    "MeterValuesSampleInterval": 30,
+    "ClockAlignedDataInterval": 900,
+    "AuthorizeRemoteTxRequests": True,
+    "LocalAuthListEnabled": True,
+}
+
+
 class ChargerCreate(BaseModel):
     """Payload for creating a charger."""
 
@@ -10,14 +21,28 @@ class ChargerCreate(BaseModel):
     charger_name: str
     ocpp_version: str = Field(default="1.6")
     evse_count: int = Field(default=1, ge=1, le=10)
+    charge_point_vendor: str = Field(default="FastCharge")
+    charge_point_model: str = Field(default="Pro 150")
+    firmware_version: str = Field(default="2.4.1")
 
 
 class ChargerUpdate(BaseModel):
-    """Payload for updating a charger (all fields optional)."""
+    """Payload for updating a charger (all fields optional). Identity fields not editable."""
 
     connection_url: str | None = None
     charger_name: str | None = None
     ocpp_version: str | None = None
+
+
+class ChargerConfigUpdate(BaseModel):
+    """Payload for updating charger OCPP config (editable keys only)."""
+
+    HeartbeatInterval: int | None = None
+    ConnectionTimeOut: int | None = None
+    MeterValuesSampleInterval: int | None = None
+    ClockAlignedDataInterval: int | None = None
+    AuthorizeRemoteTxRequests: bool | None = None
+    LocalAuthListEnabled: bool | None = None
 
 
 class MeterSnapshot(BaseModel):
@@ -81,6 +106,9 @@ class ChargerDetail(BaseModel):
     charger_name: str
     ocpp_version: str
     location_id: str
+    charge_point_vendor: str = "FastCharge"
+    charge_point_model: str = "Pro 150"
+    firmware_version: str = "2.4.1"
     evses: list[EvseStatus]
     config: dict = {}
     connected: bool = False
