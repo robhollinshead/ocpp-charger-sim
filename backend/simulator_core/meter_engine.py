@@ -38,7 +38,7 @@ def update_evse_meter(evse: EVSE, dt_s: float) -> None:
     """
     power_W = evse.get_effective_power_W()
     evse.power_W = power_W
-    evse.energy_Wh += power_W * dt_s
+    evse.energy_Wh += power_W * (dt_s / 3600.0)
     evse.current_A = power_W / evse.voltage_V if evse.voltage_V else 0.0
 
 
