@@ -29,3 +29,27 @@ export async function apiFetch<T>(
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
+
+/** POST with FormData (e.g. file upload). Does not set Content-Type so browser sets multipart boundary. */
+export async function apiFetchFormData<T>(
+  path: string,
+  formData: FormData,
+  options?: RequestInit
+): Promise<T> {
+  const base = getApiBaseUrl().replace(/\/$/, '');
+  const url = path.startsWith('http') ? path : `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  const res = await fetch(url, {
+    ...options,
+    method: options?.method ?? 'POST',
+    body: formData,
+    headers: {
+      ...options?.headers,
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}

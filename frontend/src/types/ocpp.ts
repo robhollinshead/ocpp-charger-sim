@@ -138,3 +138,34 @@ export interface ChargerConfig {
   readonly: boolean;
   type: 'string' | 'number' | 'boolean';
 }
+
+/** Vehicle (normalized for UI). */
+export interface Vehicle {
+  id: string;
+  name: string;
+  idTag: string;
+  battery_capacity_kWh: number;
+  location_id: string;
+}
+
+/** Payload for creating a vehicle (API request). */
+export interface VehicleCreate {
+  name: string;
+  idTag: string;
+  battery_capacity_kWh: number;
+}
+
+/** Raw vehicle from API (snake_case for idTag). */
+export interface VehicleResponse {
+  id: string;
+  name: string;
+  idTag: string;
+  battery_capacity_kWh: number;
+  location_id: string;
+}
+
+/** Result of an import (chargers or vehicles). */
+export interface ImportResult<T> {
+  success: T[];
+  failed: { row: unknown; error: string }[];
+}
