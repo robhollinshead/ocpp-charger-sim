@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import type { ChargerCreate } from '@/types/ocpp';
 import { OCPP_VERSIONS } from '@/types/ocpp';
 import { useCreateCharger } from '@/api/chargers';
 import { toast } from 'sonner';
@@ -35,6 +36,9 @@ const createChargerSchema = z.object({
   charger_name: z.string().min(1, 'Charger name is required'),
   ocpp_version: z.enum(['1.6', '2.0.1']),
   evse_count: z.number().int().min(1).max(10),
+  charge_point_vendor: z.string().min(1).default('FastCharge'),
+  charge_point_model: z.string().min(1).default('Pro 150'),
+  firmware_version: z.string().min(1).default('2.4.1'),
 });
 
 type CreateChargerFormValues = z.infer<typeof createChargerSchema>;
@@ -59,13 +63,16 @@ export function CreateChargerDialog({
       charger_name: '',
       ocpp_version: '1.6',
       evse_count: 1,
+      charge_point_vendor: '',
+      charge_point_model: '',
+      firmware_version: '',
     },
   });
 
   async function onSubmit(values: CreateChargerFormValues) {
     if (!locationId) return;
     try {
-      await createCharger.mutateAsync(values);
+      await createCharger.mutateAsync(values as ChargerCreate);
       toast.success('Charger created');
       form.reset({
         connection_url: '',
@@ -73,6 +80,9 @@ export function CreateChargerDialog({
         charger_name: '',
         ocpp_version: '1.6',
         evse_count: 1,
+        charge_point_vendor: '',
+        charge_point_model: '',
+        firmware_version: '',
       });
       onOpenChange(false);
     } catch (err) {
@@ -125,6 +135,45 @@ export function CreateChargerDialog({
                   <FormLabel>Charger name</FormLabel>
                   <FormControl>
                     <Input placeholder="e.g. Charger A1" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="charge_point_vendor"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Charge point vendor</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g. FastCharge" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="charge_point_model"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Charge point model</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g. Pro 150" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="firmware_version"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Firmware version</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g. 2.4.1" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
