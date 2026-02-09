@@ -13,6 +13,7 @@ from ocpp.v16.enums import (
     ChargePointErrorCode,
     ChargePointStatus,
     ChargingProfileStatus,
+    ConfigurationStatus,
     Measurand,
     Reason,
     RemoteStartStopStatus,
@@ -20,6 +21,7 @@ from ocpp.v16.enums import (
 )
 
 from simulator_core.charger import Charger
+from simulator_core.config_sync import persist_charger_config
 from simulator_core.evse import EVSE, EvseState
 from simulator_core.meter_engine import start_metering_loop
 from simulator_core.meter_engine import MeterValuesPayload as DictMeterPayload
@@ -92,6 +94,31 @@ class LoggingWebSocket:
     async def close(self, code: int = 1000, reason: str = "") -> None:
         await self._ws.close(code=code, reason=reason)
 
+
+# Known OCPP config keys (align with DEFAULT_CHARGER_CONFIG + voltage_V).
+_KNOWN_CONFIG_KEYS = frozenset({
+    "HeartbeatInterval",
+    "ConnectionTimeOut",
+    "MeterValuesSampleInterval",
+    "ClockAlignedDataInterval",
+    "AuthorizeRemoteTxRequests",
+    "LocalAuthListEnabled",
+    "voltage_V",
+})
+
+# Keys that accept integer values.
+_INT_CONFIG_KEYS = frozenset({
+    "HeartbeatInterval",
+    "ConnectionTimeOut",
+    "MeterValuesSampleInterval",
+    "ClockAlignedDataInterval",
+})
+
+# Keys that accept boolean values.
+_BOOL_CONFIG_KEYS = frozenset({
+    "AuthorizeRemoteTxRequests",
+    "LocalAuthListEnabled",
+})
 
 # Map our EvseState to OCPP ChargePointStatus
 _EVSE_STATE_TO_OCPP: dict[EvseState, ChargePointStatus] = {
@@ -190,6 +217,80 @@ class SimulatorChargePoint(ChargePoint):
         return call_result.AuthorizePayload(
             id_tag_info=datatypes.IdTagInfo(status=AuthorizationStatus.accepted),
         )
+
+    @on(Action.GetConfiguration)
+    async def on_get_configuration(self, key: Optional[list] = None, **kwargs: Any) -> call_result.GetConfigurationPayload:
+        """Return requested or all known config keys; unknown requested keys in unknown_key."""
+        if not self._charger:
+            return call_result.GetConfigurationPayload(
+                configuration_key=[], unknown_key=key or [],
+            )
+        config = self._charger.config
+        requested = (key or []) if isinstance(key, list) else ([key] if key is not None else [])
+        if not requested:
+            # Return all known keys
+            keys_to_return = [k for k in _KNOWN_CONFIG_KEYS if k in config]
+            if not keys_to_return:
+                keys_to_return = list(_KNOWN_CONFIG_KEYS)
+        else:
+            keys_to_return = [k for k in requested if k in _KNOWN_CONFIG_KEYS]
+        unknown = [k for k in requested if k not in _KNOWN_CONFIG_KEYS]
+
+        def to_str(val: Any) -> str:
+            if isinstance(val, bool):
+                return "true" if val else "false"
+            return str(val)
+
+        configuration_key = [
+            datatypes.KeyValue(
+                key=k,
+                readonly=False,
+                value=to_str(config.get(k)) if k in config else None,
+            )
+            for k in keys_to_return
+        ]
+        return call_result.GetConfigurationPayload(
+            configuration_key=configuration_key,
+            unknown_key=unknown,
+        )
+
+    @on(Action.ChangeConfiguration)
+    async def on_change_configuration(self, key: str, value: str, **kwargs: Any) -> call_result.ChangeConfigurationPayload:
+        """Validate key/value, update in-memory config, persist to DB, return status."""
+        if not self._charger:
+            return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.rejected)
+        if key not in _KNOWN_CONFIG_KEYS:
+            return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.not_supported)
+
+        parsed: Any = None
+        if key in _INT_CONFIG_KEYS:
+            try:
+                parsed = int(value)
+            except (ValueError, TypeError):
+                return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.rejected)
+        elif key in _BOOL_CONFIG_KEYS:
+            v = (value or "").strip().lower()
+            if v in ("true", "1", "yes"):
+                parsed = True
+            elif v in ("false", "0", "no"):
+                parsed = False
+            else:
+                return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.rejected)
+        elif key == "voltage_V":
+            try:
+                parsed = float(value)
+            except (ValueError, TypeError):
+                return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.rejected)
+        else:
+            return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.not_supported)
+
+        self._charger.config[key] = parsed
+        charge_point_id = self._charger.charge_point_id
+        try:
+            await asyncio.to_thread(persist_charger_config, charge_point_id, {key: parsed})
+        except Exception as e:
+            LOG.warning("ChangeConfiguration: persist failed for %s: %s", charge_point_id, e)
+        return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.accepted)
 
     @on(Action.SetChargingProfile)
     async def on_set_charging_profile(

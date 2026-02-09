@@ -12,4 +12,4 @@ run:
 	$(PYTHON) -m uvicorn main:app --reload --host 0.0.0.0 --port $(PORT)
 
 test:
-	@echo "Tests TBD — add pytest in Phase 7"
+	$(PYTHON) -m pytest tests/ -v
