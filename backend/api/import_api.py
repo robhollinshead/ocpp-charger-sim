@@ -1,5 +1,5 @@
 """Import API: file upload for chargers/vehicles and template downloads."""
-from fastapi import APIRouter, Depends, File, HTTPException, status, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, status, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -56,9 +56,11 @@ async def _read_upload(file: UploadFile) -> bytes:
 async def import_chargers(
     location_id: str,
     file: UploadFile = File(...),
+    default_connection_url: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
-    """Upload CSV or JSON; import valid charger rows; return success and failed lists."""
+    """Upload CSV or JSON; import valid charger rows; return success and failed lists.
+    If default_connection_url is provided, it is used for any row missing connection_url."""
     if get_location(db, location_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Location not found")
     try:
@@ -67,11 +69,13 @@ async def import_chargers(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
+    default_url = default_connection_url.strip() if default_connection_url and isinstance(default_connection_url, str) else None
+
     success: list[dict] = []
     failed: list[dict] = []
 
     for raw_row in rows:
-        ok, normalized, err = validate_charger_row(raw_row, location_id, db)
+        ok, normalized, err = validate_charger_row(raw_row, location_id, db, default_connection_url=default_url)
         if not ok or normalized is None:
             failed.append({"row": raw_row, "error": err})
             continue

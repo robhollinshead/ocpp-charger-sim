@@ -16,6 +16,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useImportChargers, getChargersCsvTemplateUrl, getChargersJsonTemplateUrl } from '@/api/import';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 
 interface ImportChargersModalProps {
@@ -30,6 +32,7 @@ export function ImportChargersModal({
   onOpenChange,
 }: ImportChargersModalProps) {
   const [file, setFile] = useState<File | null>(null);
+  const [defaultConnectionUrl, setDefaultConnectionUrl] = useState('');
   const [result, setResult] = useState<{ success: unknown[]; failed: { row: unknown; error: string }[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importChargers = useImportChargers(locationId);
@@ -37,6 +40,7 @@ export function ImportChargersModal({
   function handleClose(open: boolean) {
     if (!open) {
       setFile(null);
+      setDefaultConnectionUrl('');
       setResult(null);
       onOpenChange(false);
     }
@@ -45,7 +49,10 @@ export function ImportChargersModal({
   async function handleSubmit() {
     if (!locationId || !file) return;
     try {
-      const data = await importChargers.mutateAsync(file);
+      const data = await importChargers.mutateAsync({
+        file,
+        defaultConnectionUrl: defaultConnectionUrl.trim() || undefined,
+      });
       setResult({ success: data.success, failed: data.failed });
       const total = data.success.length + data.failed.length;
       if (data.failed.length === 0) {
@@ -67,6 +74,19 @@ export function ImportChargersModal({
         <p className="text-sm text-muted-foreground">
           Upload a CSV or JSON file. Format is auto-detected from the file.
         </p>
+        <div className="space-y-2">
+          <Label htmlFor="default-connection-url" className="text-sm text-muted-foreground">
+            Default connection URL (for rows missing this field)
+          </Label>
+          <Input
+            id="default-connection-url"
+            type="url"
+            placeholder="e.g. wss://csms.example.com/ocpp"
+            value={defaultConnectionUrl}
+            onChange={(e) => setDefaultConnectionUrl(e.target.value)}
+            className="font-mono text-sm"
+          />
+        </div>
         <div className="flex flex-wrap gap-2 items-center">
           <Button
             type="button"

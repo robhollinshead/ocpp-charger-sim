@@ -11,10 +11,14 @@ const API_PREFIX = '/api';
 
 export async function importChargers(
   locationId: string,
-  file: File
+  file: File,
+  defaultConnectionUrl?: string
 ): Promise<ImportResult<ChargerResponse>> {
   const formData = new FormData();
   formData.append('file', file);
+  if (defaultConnectionUrl?.trim()) {
+    formData.append('default_connection_url', defaultConnectionUrl.trim());
+  }
   return apiFetchFormData<ImportResult<ChargerResponse>>(
     `${API_PREFIX}/locations/${locationId}/import/chargers`,
     formData
@@ -49,10 +53,16 @@ export function getVehiclesJsonTemplateUrl(): string {
   return `${getApiBaseUrl()}${API_PREFIX}/import/templates/vehicles.json`;
 }
 
+export interface ImportChargersPayload {
+  file: File;
+  defaultConnectionUrl?: string;
+}
+
 export function useImportChargers(locationId: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (file: File) => importChargers(locationId!, file),
+    mutationFn: ({ file, defaultConnectionUrl }: ImportChargersPayload) =>
+      importChargers(locationId!, file, defaultConnectionUrl),
     onSuccess: () => {
       if (locationId) {
         queryClient.invalidateQueries({ queryKey: chargersQueryKey(locationId) });

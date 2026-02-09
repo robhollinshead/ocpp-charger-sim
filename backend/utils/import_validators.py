@@ -39,12 +39,16 @@ def validate_charger_row(
     row: dict[str, Any],
     location_id: str,
     db: Session,
+    default_connection_url: str | None = None,
 ) -> tuple[bool, dict[str, Any] | None, str]:
     """
     Validate a charger row. Returns (ok, normalized_dict, error_message).
     If ok is True, normalized_dict is ready for repo_create_charger (with evse_count, etc.).
+    When connection_url is missing, default_connection_url is used if provided (non-empty).
     """
     connection_url = _get_str(row, "connection_url")
+    if not connection_url and default_connection_url and str(default_connection_url).strip():
+        connection_url = str(default_connection_url).strip()
     charger_name = _get_str(row, "charger_name")
     charge_point_id = _get_str(row, "charge_point_id")
     if not connection_url:
