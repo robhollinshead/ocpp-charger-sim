@@ -528,12 +528,12 @@ async def connect_charge_point(
         LOG.error("websockets package required for OCPP client")
         return
 
-    extra_headers: Optional[list[tuple[str, str]]] = None
+    additional_headers: Optional[dict[str, str]] = None
     if basic_auth_password is not None:
         credentials = base64.b64encode(
             f"{charger.charge_point_id}:{basic_auth_password}".encode()
         ).decode()
-        extra_headers = [("Authorization", f"Basic {credentials}")]
+        additional_headers = {"Authorization": f"Basic {credentials}"}
 
     base_delay = 2.0
     max_delay = 60.0
@@ -549,8 +549,8 @@ async def connect_charge_point(
                 "ping_timeout": 10,
                 "close_timeout": 5,
             }
-            if extra_headers is not None:
-                connect_kw["extra_headers"] = extra_headers
+            if additional_headers is not None:
+                connect_kw["additional_headers"] = additional_headers
             ws = await websockets.connect(url, **connect_kw)
         except Exception as e:
             LOG.warning("Connect attempt %s failed: %s", attempt, e)
