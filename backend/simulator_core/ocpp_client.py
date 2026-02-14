@@ -1,5 +1,6 @@
 """Async OCPP 1.6 charge point client: Boot, Status, Authorize, Start/StopTransaction, MeterValues, SetChargingProfile, RemoteStartTransaction, RemoteStopTransaction."""
 import asyncio
+import base64
 import json
 import logging
 from datetime import datetime, timezone
@@ -512,17 +513,27 @@ def build_connection_url(connection_url: str, charge_point_id: str) -> str:
     return f"{base}/{charge_point_id}"
 
 
-async def connect_charge_point(charger: Charger, url: str) -> None:
+async def connect_charge_point(
+    charger: Charger, url: str, *, basic_auth_password: Optional[str] = None
+) -> None:
     """
     Long-running connect loop: connect to CSMS at url with exponential backoff (no cap).
     On success: BootNotification, then StatusNotification for each EVSE, then message loop.
     When connection drops, retry unless charger.should_stop_connect() (set by Disconnect).
+    If basic_auth_password is set, send Authorization: Basic base64(charge_point_id:password).
     """
     try:
         import websockets
     except ImportError:
         LOG.error("websockets package required for OCPP client")
         return
+
+    extra_headers: Optional[list[tuple[str, str]]] = None
+    if basic_auth_password is not None:
+        credentials = base64.b64encode(
+            f"{charger.charge_point_id}:{basic_auth_password}".encode()
+        ).decode()
+        extra_headers = [("Authorization", f"Basic {credentials}")]
 
     base_delay = 2.0
     max_delay = 60.0
@@ -532,13 +543,15 @@ async def connect_charge_point(charger: Charger, url: str) -> None:
     while not charger.should_stop_connect():
         attempt += 1
         try:
-            ws = await websockets.connect(
-                url,
-                subprotocols=["ocpp1.6"],
-                ping_interval=20,
-                ping_timeout=10,
-                close_timeout=5,
-            )
+            connect_kw: dict[str, Any] = {
+                "subprotocols": ["ocpp1.6"],
+                "ping_interval": 20,
+                "ping_timeout": 10,
+                "close_timeout": 5,
+            }
+            if extra_headers is not None:
+                connect_kw["extra_headers"] = extra_headers
+            ws = await websockets.connect(url, **connect_kw)
         except Exception as e:
             LOG.warning("Connect attempt %s failed: %s", attempt, e)
             if charger.should_stop_connect():

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import type {
   Charger,
   ChargerConfigUpdate,
@@ -217,6 +218,9 @@ export function useConnectCharger(locationId: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (chargePointId: string) => connectCharger(chargePointId),
+    onError: (err: Error) => {
+      toast.error(err.message || 'Failed to connect charger');
+    },
     onSuccess: (_, chargePointId) => {
       const refetch = () => {
         if (locationId) {

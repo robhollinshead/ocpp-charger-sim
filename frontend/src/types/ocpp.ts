@@ -52,6 +52,8 @@ export interface ChargerUpdate {
   connection_url?: string;
   charger_name?: string;
   ocpp_version?: string;
+  security_profile?: 'none' | 'basic';
+  basic_auth_password?: string;
 }
 
 /** Raw charger from API (snake_case). */
@@ -83,6 +85,8 @@ export interface ChargerDetailResponse extends ChargerResponse {
   firmware_version?: string;
   evses: EvseStatusResponse[];
   config: Record<string, string | number | boolean>;
+  security_profile?: 'none' | 'basic';
+  basic_auth_password_set?: boolean;
 }
 
 /** Payload for updating charger OCPP config (API request). */

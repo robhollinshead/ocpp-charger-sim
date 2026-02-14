@@ -33,3 +33,7 @@ class Charger(Base):
     firmware_version: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # OCPP configuration (editable). Backfilled in migration.
     config: Mapped[dict | None] = mapped_column(JSON(), nullable=True)
+    # OCPP 1.6 security profile: "none" (default), "basic" (username + password), later "basic_tls".
+    security_profile: Mapped[str] = mapped_column(String(32), nullable=False, default="none")
+    # Password for Basic auth (username = charge_point_id). Stored when security_profile is "basic"; never returned in API.
+    basic_auth_password: Mapped[str | None] = mapped_column(String(255), nullable=True)

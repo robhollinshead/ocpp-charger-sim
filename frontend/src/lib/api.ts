@@ -9,6 +9,17 @@ export function getApiBaseUrl(): string {
   return '';
 }
 
+function errorMessageFromResponse(text: string, status: number): string {
+  const fallback = text || `HTTP ${status}`;
+  try {
+    const json = JSON.parse(text) as { detail?: string };
+    if (typeof json.detail === 'string') return json.detail;
+  } catch {
+    // ignore
+  }
+  return fallback;
+}
+
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit
@@ -24,7 +35,7 @@ export async function apiFetch<T>(
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
+    throw new Error(errorMessageFromResponse(text, res.status));
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
@@ -48,7 +59,7 @@ export async function apiFetchFormData<T>(
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
+    throw new Error(errorMessageFromResponse(text, res.status));
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

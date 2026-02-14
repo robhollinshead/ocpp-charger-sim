@@ -91,7 +91,21 @@ def _sim_charger_to_summary(c: SimCharger, location_id: str, connection_url: str
     )
 
 
-def _sim_charger_to_detail(c: SimCharger, location_id: str, connection_url: str, charger_name: str, ocpp_version: str) -> ChargerDetail:
+def _basic_auth_password_set(row: ChargerModel) -> bool:
+    """True if charger has a stored Basic auth password."""
+    return row.basic_auth_password is not None and len(row.basic_auth_password) > 0
+
+
+def _sim_charger_to_detail(
+    c: SimCharger,
+    location_id: str,
+    connection_url: str,
+    charger_name: str,
+    ocpp_version: str,
+    *,
+    security_profile: str = "none",
+    basic_auth_password_set: bool = False,
+) -> ChargerDetail:
     """Build ChargerDetail from simulator Charger and DB metadata."""
     evse_statuses = [
         EvseStatus(
@@ -122,6 +136,8 @@ def _sim_charger_to_detail(c: SimCharger, location_id: str, connection_url: str,
         evses=evse_statuses,
         config=c.config,
         connected=c.is_connected,
+        security_profile=security_profile if security_profile in ("none", "basic") else "none",
+        basic_auth_password_set=basic_auth_password_set,
     )
 
 
@@ -222,7 +238,13 @@ def get_charger(charge_point_id: str, db: Session = Depends(get_db)) -> ChargerD
     row = repo_get_charger(db, charge_point_id)
     assert row is not None
     return _sim_charger_to_detail(
-        sim, row.location_id, row.connection_url, row.charger_name, row.ocpp_version
+        sim,
+        row.location_id,
+        row.connection_url,
+        row.charger_name,
+        row.ocpp_version,
+        security_profile=row.security_profile,
+        basic_auth_password_set=_basic_auth_password_set(row),
     )
 
 
@@ -320,9 +342,15 @@ async def connect_charger(charge_point_id: str, db: Session = Depends(get_db)) -
         return {"status": "already_connected", "charge_point_id": charge_point_id}
     row = repo_get_charger(db, charge_point_id)
     assert row is not None
+    if row.security_profile == "basic" and not _basic_auth_password_set(row):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Set a password in Charger Details before connecting with Basic security",
+        )
     url = build_connection_url(row.connection_url, charge_point_id)
+    basic_auth_password = row.basic_auth_password if row.security_profile == "basic" else None
     sim.clear_stop_connect()
-    asyncio.create_task(connect_charge_point(sim, url))
+    asyncio.create_task(connect_charge_point(sim, url, basic_auth_password=basic_auth_password))
     return {"status": "connecting", "charge_point_id": charge_point_id}
 
 
@@ -376,7 +404,13 @@ def update_charger_config(
         row = repo_get_charger(db, charge_point_id)
         assert row is not None
         return _sim_charger_to_detail(
-            sim, row.location_id, row.connection_url, row.charger_name, row.ocpp_version
+            sim,
+            row.location_id,
+            row.connection_url,
+            row.charger_name,
+            row.ocpp_version,
+            security_profile=row.security_profile,
+            basic_auth_password_set=_basic_auth_password_set(row),
         )
     row = repo_update_charger_config(db, charge_point_id, updates)
     if row is None:
@@ -389,7 +423,13 @@ def update_charger_config(
     if sim is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
     return _sim_charger_to_detail(
-        sim, row.location_id, row.connection_url, row.charger_name, row.ocpp_version
+        sim,
+        row.location_id,
+        row.connection_url,
+        row.charger_name,
+        row.ocpp_version,
+        security_profile=row.security_profile,
+        basic_auth_password_set=_basic_auth_password_set(row),
     )
 
 
@@ -406,6 +446,8 @@ def update_charger(
         connection_url=body.connection_url,
         charger_name=body.charger_name,
         ocpp_version=body.ocpp_version,
+        security_profile=body.security_profile,
+        basic_auth_password=body.basic_auth_password,
     )
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
@@ -418,7 +460,13 @@ def update_charger(
         if body.ocpp_version is not None:
             sim.ocpp_version = body.ocpp_version
         return _sim_charger_to_detail(
-            sim, row.location_id, row.connection_url, row.charger_name, row.ocpp_version
+            sim,
+            row.location_id,
+            row.connection_url,
+            row.charger_name,
+            row.ocpp_version,
+            security_profile=row.security_profile,
+            basic_auth_password_set=_basic_auth_password_set(row),
         )
     config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
     return _sim_charger_to_detail(
@@ -438,6 +486,8 @@ def update_charger(
         row.connection_url,
         row.charger_name,
         row.ocpp_version,
+        security_profile=row.security_profile,
+        basic_auth_password_set=_basic_auth_password_set(row),
     )
 
 

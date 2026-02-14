@@ -67,6 +67,8 @@ def update_charger(
     connection_url: Optional[str] = None,
     charger_name: Optional[str] = None,
     ocpp_version: Optional[str] = None,
+    security_profile: Optional[str] = None,
+    basic_auth_password: Optional[str] = None,
 ) -> Optional[ChargerModel]:
     """Update charger by charge_point_id. Returns updated charger or None if not found."""
     charger = get_charger_by_charge_point_id(session, charge_point_id)
@@ -78,6 +80,12 @@ def update_charger(
         charger.charger_name = charger_name
     if ocpp_version is not None:
         charger.ocpp_version = ocpp_version
+    if security_profile is not None:
+        charger.security_profile = security_profile
+        if security_profile == "none":
+            charger.basic_auth_password = None
+    if basic_auth_password is not None:
+        charger.basic_auth_password = basic_auth_password
     session.commit()
     session.refresh(charger)
     return charger

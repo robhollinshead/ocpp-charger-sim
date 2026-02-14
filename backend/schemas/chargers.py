@@ -1,4 +1,6 @@
 """Pydantic schemas for charger API."""
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -33,6 +35,8 @@ class ChargerUpdate(BaseModel):
     connection_url: str | None = None
     charger_name: str | None = None
     ocpp_version: str | None = None
+    security_profile: Literal["none", "basic"] | None = None
+    basic_auth_password: str | None = None  # Write-only; never in response.
 
 
 class ChargerConfigUpdate(BaseModel):
@@ -114,6 +118,8 @@ class ChargerDetail(BaseModel):
     evses: list[EvseStatus]
     config: dict = {}
     connected: bool = False
+    security_profile: Literal["none", "basic"] = "none"
+    basic_auth_password_set: bool = False
 
 
 class OCPPLogEntry(BaseModel):
