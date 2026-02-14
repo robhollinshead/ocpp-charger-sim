@@ -76,6 +76,7 @@ class StartTransactionRequest(BaseModel):
 
     connector_id: int
     id_tag: str
+    start_soc_pct: float | None = None
 
 
 class StartTransactionResponse(BaseModel):

@@ -8,7 +8,7 @@ LOG = logging.getLogger(__name__)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from db import get_db
+from db import SessionLocal, get_db
 from models.charger import Charger as ChargerModel
 from repositories.charger_repository import (
     create_charger as repo_create_charger,
@@ -20,6 +20,7 @@ from repositories.charger_repository import (
     update_charger_config as repo_update_charger_config,
 )
 from repositories.location_repository import get_location
+from repositories.vehicle_repository import get_vehicle_by_id_tag
 from schemas.chargers import (
     ChargerConfigUpdate,
     ChargerCreate,
@@ -42,6 +43,18 @@ from simulator_core.store import add as store_add, get_by_id as store_get_by_id,
 router = APIRouter(tags=["chargers"])
 
 
+def _resolve_vehicle_for_soc(id_tag: str) -> tuple[float, float] | None:
+    """Resolve id_tag to (battery_capacity_kwh, start_soc_pct). Returns None to use 100 kWh, 20%."""
+    db = SessionLocal()
+    try:
+        vehicle = get_vehicle_by_id_tag(db, id_tag)
+        if vehicle is None:
+            return None
+        return (float(vehicle.battery_capacity_kwh), 20.0)
+    finally:
+        db.close()
+
+
 def _hydrate_charger(db: Session, charge_point_id: str) -> SimCharger | None:
     """Ensure charger is in simulator store; build from DB (charger + evse rows) if missing. Returns SimCharger or None if not in DB."""
     row = repo_get_charger(db, charge_point_id)
@@ -49,6 +62,7 @@ def _hydrate_charger(db: Session, charge_point_id: str) -> SimCharger | None:
         return None
     sim = store_get_by_id(charge_point_id)
     if sim is not None:
+        sim.set_vehicle_resolver(lambda id_tag: _resolve_vehicle_for_soc(id_tag))
         return sim
     evse_rows = repo_list_evses_by_charger_id(db, row.id)
     if not evse_rows:
@@ -74,6 +88,7 @@ def _hydrate_charger(db: Session, charge_point_id: str) -> SimCharger | None:
         firmware_version=row.firmware_version or "2.4.1",
     )
     store_add(sim)
+    sim.set_vehicle_resolver(lambda id_tag: _resolve_vehicle_for_soc(id_tag))
     return sim
 
 
@@ -284,8 +299,16 @@ async def start_transaction(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="EVSE already has an active transaction",
         )
+    vehicle = get_vehicle_by_id_tag(db, body.id_tag)
+    battery_capacity_kwh = float(vehicle.battery_capacity_kwh) if vehicle else 100.0
+    start_soc_pct = body.start_soc_pct if body.start_soc_pct is not None else 20.0
     try:
-        result = await client.start_transaction(body.connector_id, body.id_tag)
+        result = await client.start_transaction(
+            body.connector_id,
+            body.id_tag,
+            start_soc_pct=start_soc_pct,
+            battery_capacity_kwh=battery_capacity_kwh,
+        )
     except Exception as e:
         LOG.exception("Start transaction failed")
         raise HTTPException(

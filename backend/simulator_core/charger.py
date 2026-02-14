@@ -1,7 +1,7 @@
 """Charger model: identity, EVSEs, config, optional OCPP connection."""
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from simulator_core.evse import EVSE
 
@@ -26,6 +26,7 @@ class Charger:
         "_ocpp_client",
         "_stop_connect",
         "_ocpp_log",
+        "_vehicle_resolver",
     )
 
     def __init__(
@@ -54,6 +55,19 @@ class Charger:
         self._ocpp_client: Any = None  # Optional running OCPP client
         self._stop_connect = False
         self._ocpp_log: list[dict[str, Any]] = []  # Session-scoped OCPP message log
+        self._vehicle_resolver: Optional[Callable[[str], Optional[tuple[float, float]]]] = None
+
+    def set_vehicle_resolver(
+        self, resolver: Optional[Callable[[str], Optional[tuple[float, float]]]]
+    ) -> None:
+        """Set resolver for id_tag -> (battery_capacity_kwh, start_soc_pct). None = use 100 kWh, 20%."""
+        self._vehicle_resolver = resolver
+
+    def get_vehicle_resolver(
+        self,
+    ) -> Optional[Callable[[str], Optional[tuple[float, float]]]]:
+        """Return vehicle resolver or None."""
+        return self._vehicle_resolver
 
     def set_stop_connect(self, stop: bool = True) -> None:
         """Set flag to stop the connect loop from retrying (used on Disconnect)."""

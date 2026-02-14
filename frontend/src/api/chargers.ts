@@ -88,6 +88,7 @@ export async function clearChargerLogs(chargePointId: string): Promise<void> {
 export interface StartTransactionPayload {
   connector_id: number;
   id_tag: string;
+  start_soc_pct?: number;
 }
 
 export interface StartTransactionResponse {

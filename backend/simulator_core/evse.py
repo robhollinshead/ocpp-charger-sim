@@ -54,6 +54,9 @@ class EVSE:
         "_initial_energy_Wh",
         "id_tag",
         "session_start_time",
+        "start_soc_pct",
+        "battery_capacity_Wh",
+        "soc_pct",
     )
 
     def __init__(
@@ -74,6 +77,9 @@ class EVSE:
         self._initial_energy_Wh = 0.0  # at StartTransaction
         self.id_tag: Optional[str] = None
         self.session_start_time: Optional[str] = None
+        self.start_soc_pct = 20.0
+        self.battery_capacity_Wh = 100_000.0
+        self.soc_pct = 20.0
 
     def transition_to(self, new_state: EvseState) -> bool:
         """Validate and perform state transition. Returns True if applied."""
@@ -105,12 +111,22 @@ class EVSE:
             "current_A": self.current_A,
         }
 
-    def start_transaction(self, transaction_id: int, id_tag: str = "") -> None:
-        """Record transaction start; set initial energy, id_tag and session_start_time."""
+    def start_transaction(
+        self,
+        transaction_id: int,
+        id_tag: str = "",
+        *,
+        start_soc_pct: float = 20.0,
+        battery_capacity_wh: float = 100.0,
+    ) -> None:
+        """Record transaction start; set initial energy, id_tag, session_start_time, SoC params."""
         self.transaction_id = transaction_id
         self._initial_energy_Wh = self.energy_Wh
         self.id_tag = id_tag or None
         self.session_start_time = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        self.start_soc_pct = start_soc_pct
+        self.battery_capacity_Wh = battery_capacity_wh * 1000.0
+        self.soc_pct = start_soc_pct
 
     def end_transaction(self) -> None:
         """Clear transaction id, id_tag and session_start_time after StopTransaction."""

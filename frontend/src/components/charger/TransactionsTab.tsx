@@ -42,6 +42,7 @@ function evseToActiveTx(evse: EvseStatusResponse) {
 export function TransactionsTab({ chargePointId, locationId }: TransactionsTabProps) {
   const [idTag, setIdTag] = useState('');
   const [connectorId, setConnectorId] = useState('1');
+  const [startSocPct, setStartSocPct] = useState(20);
 
   const { data: vehicles = [] } = useVehicles(locationId);
   const idTagOptions = vehicles.flatMap((v) =>
@@ -75,7 +76,7 @@ export function TransactionsTab({ chargePointId, locationId }: TransactionsTabPr
       return;
     }
     startTx.mutate(
-      { connector_id: connector, id_tag: idTag.trim() },
+      { connector_id: connector, id_tag: idTag.trim(), start_soc_pct: startSocPct },
       {
         onSuccess: () => {
           toast.success(`Transaction started on connector ${connector}`);
@@ -175,6 +176,17 @@ export function TransactionsTab({ chargePointId, locationId }: TransactionsTabPr
                 min="1"
                 value={connectorId}
                 onChange={(e) => setConnectorId(e.target.value)}
+                className="bg-secondary border-border"
+              />
+            </div>
+            <div className="w-28 space-y-2">
+              <label className="text-sm text-muted-foreground">Start SoC (%)</label>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={startSocPct}
+                onChange={(e) => setStartSocPct(Number(e.target.value) || 20)}
                 className="bg-secondary border-border"
               />
             </div>

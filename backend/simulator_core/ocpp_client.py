@@ -155,14 +155,16 @@ def _dict_to_meter_values_payload(d: DictMeterPayload) -> call.MeterValuesPayloa
     meter_value_list = []
     for mv in d["meterValue"]:
         ts = mv["timestamp"]
-        sampled = [
-            datatypes.SampledValue(
-                value=sv["value"],
-                measurand=_measurand_from_str(sv["measurand"]) if isinstance(sv["measurand"], str) else sv["measurand"],
-                unit=_unit_from_str(sv["unit"]) if isinstance(sv["unit"], str) else sv["unit"],
-            )
-            for sv in mv["sampledValue"]
-        ]
+        sampled = []
+        for sv in mv["sampledValue"]:
+            kw: dict[str, Any] = {
+                "value": sv["value"],
+                "measurand": _measurand_from_str(sv["measurand"]) if isinstance(sv["measurand"], str) else sv["measurand"],
+                "unit": _unit_from_str(sv["unit"]) if isinstance(sv["unit"], str) else sv["unit"],
+            }
+            if "location" in sv and sv["location"] is not None:
+                kw["location"] = sv["location"]
+            sampled.append(datatypes.SampledValue(**kw))
         meter_value_list.append(datatypes.MeterValue(timestamp=ts, sampled_value=sampled))
     return call.MeterValuesPayload(
         connector_id=connector_id,
@@ -382,11 +384,19 @@ class SimulatorChargePoint(ChargePoint):
         """Background task: stop transaction with reason=remote (called from RemoteStopTransaction handler)."""
         await self.stop_transaction(connector_id, reason=Reason.remote)
 
-    async def start_transaction(self, connector_id: int, id_tag: str) -> Optional[int]:
+    async def start_transaction(
+        self,
+        connector_id: int,
+        id_tag: str,
+        *,
+        start_soc_pct: float | None = None,
+        battery_capacity_kwh: float | None = None,
+    ) -> Optional[int]:
         """
         Start charging session: Preparing, optionally Authorize, then StartTransaction.
         If OCPPAuthorizationEnabled: send Authorize first; only on Accepted proceed to StartTransaction.
         If FreeVend: go straight to StartTransaction. Returns transaction_id or None on failure.
+        When start_soc_pct or battery_capacity_kwh is None, uses vehicle resolver (100 kWh, 20% if not found).
         """
         if not self._charger:
             return None
@@ -452,7 +462,20 @@ class SimulatorChargePoint(ChargePoint):
             await self.send_status_notification(connector_id, EvseState.Available)
             return None
 
-        evse.start_transaction(resp.transaction_id, id_tag)
+        if start_soc_pct is None or battery_capacity_kwh is None:
+            resolver = self._charger.get_vehicle_resolver() if self._charger else None
+            result = (resolver or (lambda _: None))(id_tag) if resolver else None
+            if start_soc_pct is None:
+                start_soc_pct = result[1] if result else 20.0
+            if battery_capacity_kwh is None:
+                battery_capacity_kwh = result[0] if result else 100.0
+
+        evse.start_transaction(
+            resp.transaction_id,
+            id_tag,
+            start_soc_pct=start_soc_pct,
+            battery_capacity_wh=battery_capacity_kwh,
+        )
         if not evse.transition_to(EvseState.Charging):
             evse.end_transaction()
             evse.transition_to(EvseState.Available)
