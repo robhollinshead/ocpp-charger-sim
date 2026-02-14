@@ -8,7 +8,7 @@ function mapResponseToVehicle(r: VehicleResponse): Vehicle {
   return {
     id: r.id,
     name: r.name,
-    idTag: r.idTag,
+    idTags: r.idTags ?? [],
     battery_capacity_kWh: r.battery_capacity_kWh,
     location_id: r.location_id,
   };

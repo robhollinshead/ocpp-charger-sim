@@ -20,10 +20,11 @@ router = APIRouter(tags=["vehicles"])
 
 def _vehicle_to_response(v) -> VehicleResponse:
     """Build VehicleResponse from model instance."""
+    id_tags = [t.id_tag for t in v.id_tags] if v.id_tags else []
     return VehicleResponse(
         id=v.id,
         name=v.name,
-        idTag=v.id_tag,
+        idTags=id_tags,
         battery_capacity_kWh=float(v.battery_capacity_kwh),
         location_id=v.location_id,
     )
@@ -56,17 +57,18 @@ def create_vehicle(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Vehicle with name '{body.name}' already exists",
         )
-    if repo_get_vehicle_by_id_tag(db, body.idTag) is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Vehicle with idTag '{body.idTag}' already exists",
-        )
+    for tag in body.idTags:
+        if repo_get_vehicle_by_id_tag(db, tag) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Vehicle with idTag '{tag}' already exists",
+            )
     try:
         vehicle = repo_create_vehicle(
             db,
             location_id=location_id,
             name=body.name,
-            id_tag=body.idTag,
+            id_tags=body.idTags,
             battery_capacity_kwh=body.battery_capacity_kWh,
         )
         return _vehicle_to_response(vehicle)

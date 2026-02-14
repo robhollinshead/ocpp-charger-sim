@@ -83,14 +83,20 @@ def validate_charger_row(
 def validate_vehicle_row(row: dict[str, Any], db: Session) -> tuple[bool, dict[str, Any] | None, str]:
     """
     Validate a vehicle row. Returns (ok, normalized_dict, error_message).
-    normalized_dict has name, id_tag, battery_capacity_kwh (float).
+    idTag is comma-separated; normalized_dict has name, id_tags (list[str]), battery_capacity_kwh (float).
     """
     name = _get_str(row, "name")
-    id_tag = _get_str(row, "idTag")
+    id_tag_raw = _get_str(row, "idTag")
     if not name:
         return False, None, "name is required"
-    if not id_tag:
-        return False, None, "idTag is required"
+    # Parse comma-separated idTags: split, strip, drop empty, deduplicate
+    id_tags = list(
+        dict.fromkeys(
+            t.strip() for t in (id_tag_raw or "").split(",") if t and t.strip()
+        )
+    )
+    if not id_tags:
+        return False, None, "idTag is required (comma-separated for multiple)"
 
     raw_battery = row.get("battery_capacity_kWh")
     if raw_battery is None or (isinstance(raw_battery, str) and not raw_battery.strip()):
@@ -104,12 +110,13 @@ def validate_vehicle_row(row: dict[str, Any], db: Session) -> tuple[bool, dict[s
 
     if get_vehicle_by_name(db, name) is not None:
         return False, None, f"vehicle with name '{name}' already exists"
-    if get_vehicle_by_id_tag(db, id_tag) is not None:
-        return False, None, f"vehicle with idTag '{id_tag}' already exists"
+    for tag in id_tags:
+        if get_vehicle_by_id_tag(db, tag) is not None:
+            return False, None, f"vehicle with idTag '{tag}' already exists"
 
     normalized = {
         "name": name,
-        "id_tag": id_tag,
+        "id_tags": id_tags,
         "battery_capacity_kwh": battery,
     }
     return True, normalized, ""

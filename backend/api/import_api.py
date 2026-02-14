@@ -33,11 +33,16 @@ CHARGERS_JSON_TEMPLATE = """[
   }
 ]
 """
-VEHICLES_CSV_TEMPLATE = "name,idTag,battery_capacity_kWh\n\n"
+VEHICLES_CSV_TEMPLATE = 'name,idTag,battery_capacity_kWh\nVehicle 1,ABC12345,75\n"Vehicle 2","60603912110f,6060391212ee",75\n\n'
 VEHICLES_JSON_TEMPLATE = """[
   {
     "name": "Test Vehicle",
     "idTag": "ABC12345",
+    "battery_capacity_kWh": 75
+  },
+  {
+    "name": "Vehicle 2",
+    "idTag": "60603912110f,6060391212ee",
     "battery_capacity_kWh": 75
   }
 ]
@@ -158,17 +163,18 @@ async def import_vehicles(
                 db,
                 location_id=location_id,
                 name=normalized["name"],
-                id_tag=normalized["id_tag"],
+                id_tags=normalized["id_tags"],
                 battery_capacity_kwh=normalized["battery_capacity_kwh"],
             )
         except IntegrityError:
             failed.append({"row": raw_row, "error": "vehicle with that name or idTag already exists"})
             continue
+        id_tags = [t.id_tag for t in vehicle.id_tags] if vehicle.id_tags else normalized["id_tags"]
         success.append(
             VehicleResponse(
                 id=vehicle.id,
                 name=vehicle.name,
-                idTag=vehicle.id_tag,
+                idTags=id_tags,
                 battery_capacity_kWh=float(vehicle.battery_capacity_kwh),
                 location_id=vehicle.location_id,
             ).model_dump()

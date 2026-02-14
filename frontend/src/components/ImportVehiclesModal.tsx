@@ -110,16 +110,16 @@ export function ImportVehiclesModal({
                   <TableHeader>
                     <TableRow>
                       <TableHead>name</TableHead>
-                      <TableHead>idTag</TableHead>
+                      <TableHead>idTags</TableHead>
                       <TableHead className="text-right">battery_capacity_kWh</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(result.success as { name?: string; idTag?: string; battery_capacity_kWh?: number }[]).map(
+                    {(result.success as { name?: string; idTags?: string[]; battery_capacity_kWh?: number }[]).map(
                       (row, i) => (
                         <TableRow key={i}>
                           <TableCell>{row.name ?? '-'}</TableCell>
-                          <TableCell>{row.idTag ?? '-'}</TableCell>
+                          <TableCell>{row.idTags?.length ? row.idTags.join(', ') : '-'}</TableCell>
                           <TableCell className="text-right">{row.battery_capacity_kWh ?? '-'}</TableCell>
                         </TableRow>
                       )

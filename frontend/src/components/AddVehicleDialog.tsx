@@ -24,7 +24,7 @@ import { toast } from 'sonner';
 
 const addVehicleSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  idTag: z.string().min(1, 'idTag is required'),
+  idTagsComma: z.string().min(1, 'At least one idTag is required'),
   battery_capacity_kWh: z.number().positive('Battery capacity must be positive'),
 });
 
@@ -46,17 +46,26 @@ export function AddVehicleDialog({
     resolver: zodResolver(addVehicleSchema),
     defaultValues: {
       name: '',
-      idTag: '',
+      idTagsComma: '',
       battery_capacity_kWh: 75,
     },
   });
 
   async function onSubmit(values: AddVehicleFormValues) {
     if (!locationId) return;
+    const idTags = values.idTagsComma.split(',').map((t) => t.trim()).filter(Boolean);
+    if (idTags.length === 0) {
+      form.setError('idTagsComma', { message: 'At least one idTag is required' });
+      return;
+    }
     try {
-      await createVehicle.mutateAsync(values as VehicleCreate);
+      await createVehicle.mutateAsync({
+        name: values.name,
+        idTags,
+        battery_capacity_kWh: values.battery_capacity_kWh,
+      });
       toast.success('Vehicle created');
-      form.reset({ name: '', idTag: '', battery_capacity_kWh: 75 });
+      form.reset({ name: '', idTagsComma: '', battery_capacity_kWh: 75 });
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to create vehicle');
@@ -86,12 +95,12 @@ export function AddVehicleDialog({
             />
             <FormField
               control={form.control}
-              name="idTag"
+              name="idTagsComma"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>idTag</FormLabel>
+                  <FormLabel>idTags (comma-separated)</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g. ABC12345" {...field} />
+                    <Input placeholder="e.g. 60603912110f, 6060391212ee" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

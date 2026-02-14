@@ -6,7 +6,7 @@ class VehicleCreate(BaseModel):
     """Payload for creating a vehicle."""
 
     name: str = Field(..., min_length=1)
-    idTag: str = Field(..., min_length=1)
+    idTags: list[str] = Field(..., min_length=1)
     battery_capacity_kWh: float = Field(..., gt=0)
 
 
@@ -15,6 +15,6 @@ class VehicleResponse(BaseModel):
 
     id: str
     name: str
-    idTag: str
+    idTags: list[str]
     battery_capacity_kWh: float
     location_id: str

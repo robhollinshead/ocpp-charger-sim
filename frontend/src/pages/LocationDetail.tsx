@@ -334,7 +334,7 @@ export default function LocationDetail() {
                   {vehicles.map((vehicle) => (
                     <TableRow key={vehicle.id}>
                       <TableCell className="font-medium">{vehicle.name}</TableCell>
-                      <TableCell>{vehicle.idTag}</TableCell>
+                      <TableCell>{vehicle.idTags?.length ? vehicle.idTags.join(', ') : '—'}</TableCell>
                       <TableCell className="text-right">
                         {vehicle.battery_capacity_kWh}
                       </TableCell>

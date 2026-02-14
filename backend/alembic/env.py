@@ -10,6 +10,7 @@ from models.location import Location  # noqa: F401 - ensure model is registered
 from models.charger import Charger  # noqa: F401 - ensure model is registered
 from models.evse import Evse  # noqa: F401 - ensure model is registered
 from models.vehicle import Vehicle  # noqa: F401 - ensure model is registered
+from models.vehicle_id_tag import VehicleIdTag  # noqa: F401 - ensure model is registered
 from utils.config import DATABASE_URL
 
 # this is the Alembic Config object

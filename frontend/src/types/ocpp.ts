@@ -148,7 +148,7 @@ export interface ChargerConfig {
 export interface Vehicle {
   id: string;
   name: string;
-  idTag: string;
+  idTags: string[];
   battery_capacity_kWh: number;
   location_id: string;
 }
@@ -156,15 +156,15 @@ export interface Vehicle {
 /** Payload for creating a vehicle (API request). */
 export interface VehicleCreate {
   name: string;
-  idTag: string;
+  idTags: string[];
   battery_capacity_kWh: number;
 }
 
-/** Raw vehicle from API (snake_case for idTag). */
+/** Raw vehicle from API. */
 export interface VehicleResponse {
   id: string;
   name: string;
-  idTag: string;
+  idTags: string[];
   battery_capacity_kWh: number;
   location_id: string;
 }

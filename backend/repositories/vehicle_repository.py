@@ -2,9 +2,10 @@
 from typing import Optional
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from models.vehicle import Vehicle
+from models.vehicle_id_tag import VehicleIdTag
 
 
 def create_vehicle(
@@ -12,17 +13,19 @@ def create_vehicle(
     *,
     location_id: str,
     name: str,
-    id_tag: str,
+    id_tags: list[str],
     battery_capacity_kwh: float,
 ) -> Vehicle:
-    """Create a vehicle, commit, and return it."""
+    """Create a vehicle with one or more idTags, commit, and return it."""
     vehicle = Vehicle(
         location_id=location_id,
         name=name,
-        id_tag=id_tag,
         battery_capacity_kwh=battery_capacity_kwh,
     )
     session.add(vehicle)
+    session.flush()
+    for tag in id_tags:
+        session.add(VehicleIdTag(vehicle_id=vehicle.id, id_tag=tag))
     session.commit()
     session.refresh(vehicle)
     return vehicle
@@ -34,9 +37,9 @@ def get_vehicle_by_id(session: Session, vehicle_id: str) -> Optional[Vehicle]:
 
 
 def get_vehicle_by_id_tag(session: Session, id_tag: str) -> Optional[Vehicle]:
-    """Return vehicle by idTag or None."""
+    """Return vehicle that has this idTag, or None."""
     return session.execute(
-        select(Vehicle).where(Vehicle.id_tag == id_tag)
+        select(Vehicle).join(VehicleIdTag).where(VehicleIdTag.id_tag == id_tag)
     ).scalar_one_or_none()
 
 
@@ -48,9 +51,12 @@ def get_vehicle_by_name(session: Session, name: str) -> Optional[Vehicle]:
 
 
 def list_vehicles_by_location(session: Session, location_id: str) -> list[Vehicle]:
-    """Return all vehicles for a location."""
+    """Return all vehicles for a location, with id_tags loaded."""
     result = session.execute(
-        select(Vehicle).where(Vehicle.location_id == location_id).order_by(Vehicle.name)
+        select(Vehicle)
+        .where(Vehicle.location_id == location_id)
+        .order_by(Vehicle.name)
+        .options(selectinload(Vehicle.id_tags))
     )
     return list(result.scalars().all())
 
