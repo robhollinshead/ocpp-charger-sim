@@ -25,3 +25,10 @@ frontend/dist/
 
 # Logs
 *.log
+
+# Coverage
+htmlcov/
+.coverage
+.coverage.*
+frontend/coverage/
+testing/reports/

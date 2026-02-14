@@ -1,4 +1,4 @@
-.PHONY: install run test
+.PHONY: install run test test-unit test-integration test-api test-quick test-coverage test-report
 
 PORT ?= 8001
 # Must run from backend/ so "main" and "api" resolve. Prefer: ./run.sh
@@ -13,3 +13,21 @@ run:
 
 test:
 	$(PYTHON) -m pytest tests/ -v
+
+test-unit:
+	$(PYTHON) -m pytest tests/unit/ -v
+
+test-integration:
+	$(PYTHON) -m pytest tests/integration/ -v
+
+test-api:
+	$(PYTHON) -m pytest tests/api/ -v
+
+test-quick:
+	$(PYTHON) -m pytest tests/api/ -v -m api
+
+test-coverage:
+	$(PYTHON) -m pytest tests/ --cov=api --cov=simulator_core --cov=repositories --cov=db --cov=utils --cov=schemas --cov=models --cov-report=term-missing --cov-report=html:htmlcov --cov-fail-under=80
+
+test-report:
+	$(PYTHON) scripts/test_report.py

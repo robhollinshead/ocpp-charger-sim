@@ -11,6 +11,8 @@ from simulator_core.charger import Charger
 from simulator_core.evse import EVSE, EvseState
 from simulator_core.ocpp_client import SimulatorChargePoint
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def mock_connection():
@@ -98,8 +100,16 @@ async def test_authorize_enabled_then_start_accepted(charge_point_auth_enabled):
     with patch.object(charge_point_auth_enabled, "call", side_effect=mock_call), patch(
         "simulator_core.ocpp_client.start_metering_loop"
     ) as mock_meter:
-        mock_meter.return_value = (asyncio.create_task(_dummy_meter_task()), asyncio.Event())
-        result = await charge_point_auth_enabled.start_transaction(connector_id=1, id_tag="TAG1")
+        meter_task = asyncio.create_task(_dummy_meter_task())
+        mock_meter.return_value = (meter_task, asyncio.Event())
+        try:
+            result = await charge_point_auth_enabled.start_transaction(connector_id=1, id_tag="TAG1")
+        finally:
+            meter_task.cancel()
+            try:
+                await meter_task
+            except asyncio.CancelledError:
+                pass
 
     assert result == 42
     evse = charge_point_auth_enabled._charger.get_evse(1)
@@ -151,8 +161,16 @@ async def test_authorize_disabled_free_vend_start_accepted(charge_point_auth_dis
     with patch.object(charge_point_auth_disabled, "call", side_effect=mock_call), patch(
         "simulator_core.ocpp_client.start_metering_loop"
     ) as mock_meter:
-        mock_meter.return_value = (asyncio.create_task(_dummy_meter_task()), asyncio.Event())
-        result = await charge_point_auth_disabled.start_transaction(connector_id=1, id_tag="TAG1")
+        meter_task = asyncio.create_task(_dummy_meter_task())
+        mock_meter.return_value = (meter_task, asyncio.Event())
+        try:
+            result = await charge_point_auth_disabled.start_transaction(connector_id=1, id_tag="TAG1")
+        finally:
+            meter_task.cancel()
+            try:
+                await meter_task
+            except asyncio.CancelledError:
+                pass
 
     assert result == 7
     evse = charge_point_auth_disabled._charger.get_evse(1)

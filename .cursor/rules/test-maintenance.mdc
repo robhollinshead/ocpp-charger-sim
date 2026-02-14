@@ -1,0 +1,38 @@
+---
+description: Backend testing approach, test maintenance, and 80% coverage goal
+alwaysApply: true
+---
+
+# Test maintenance and coverage goal
+
+## Coverage goal
+
+Maintain **at least 80% backend test coverage** (pytest-cov). Run `make test-coverage` from `backend/` to check. The coverage target is enforced via `--cov-fail-under=80` on the coverage run.
+
+## Database safety
+
+Tests must never use the production database. Use the in-memory test DB and fixtures (`db_session`, `client`) as documented in `docs/testing.md`. No manual production connections or hardcoded production paths (e.g. `simulator.db`).
+
+## Test layout
+
+- **Directories:** `backend/tests/unit/`, `backend/tests/integration/`, `backend/tests/api/`
+- **Markers:** `unit`, `integration`, `api`, `regression`, `slow` (use `--strict-markers`)
+- **Fixtures:** Use shared setup from `backend/tests/conftest.py` (e.g. `client`, `db_session`, `engine`)
+
+## Maintenance
+
+When changing code, keep tests in sync:
+
+- **API endpoints:** Add or update corresponding API/regression tests; run `make test-quick` after changes.
+- **Models / DB:** Update fixtures in conftest and any tests using those models; run the full suite.
+- **CRUD / services:** Update unit or integration tests for the affected module; check cascade/delete behaviour.
+- **Schemas / validation:** Update example payloads in API tests and any validation tests.
+- **New features:** Add regression or unit tests as appropriate; extend fixtures.
+
+Before merging, run the full suite and `make test-coverage` so coverage stays at or above 80%.
+
+## Patterns
+
+- **Patch where the dependency is used:** Patch the name in the module that uses it (e.g. `patch('simulator_core.ocpp_client.start_metering_loop')`), not the module that defines it.
+- **Prefer fixtures** over inline setup so tests stay short and consistent.
+- **Arrange–Act–Assert:** Set up data, call the code under test, then assert outcomes.

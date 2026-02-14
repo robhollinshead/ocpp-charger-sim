@@ -1,6 +1,5 @@
 """Tests for OCPP GetConfiguration and ChangeConfiguration handlers."""
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -8,6 +7,8 @@ from ocpp.v16.enums import ConfigurationStatus
 from simulator_core.charger import Charger
 from simulator_core.evse import EVSE
 from simulator_core.ocpp_client import SimulatorChargePoint
+
+pytestmark = pytest.mark.unit
 
 
 @pytest.fixture

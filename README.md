@@ -60,8 +60,11 @@ Ports 8000 and 5173 are left free for the CSMS.
 
 ## Testing
 
-- **Backend**: `cd backend && make test` (placeholder for now; tests will be added in Phase 7).
-- **Frontend**: `cd frontend && npm run test`.
+- **Backend**: `cd backend && make test` (full suite). See [docs/testing.md](docs/testing.md) for `test-unit`, `test-integration`, `test-api`, `test-quick`, and `test-coverage`.
+- **Frontend**: `cd frontend && npm run test` (or `npm run test:run`, `npm run test:watch`, `npm run test:coverage`).
+- **Both**: from repo root, `make test` runs backend and frontend tests.
+
+Tests use an in-memory DB and never touch production; see **Database safety** and **Test maintenance** in [docs/testing.md](docs/testing.md).
 
 ## Project structure
 

@@ -60,8 +60,7 @@ def api_health() -> HealthResponse:
     return HealthResponse()
 
 
-@app.on_event("startup")
-def startup() -> None:
+def _startup() -> None:
     """Run DB migrations and seed default charger."""
     backend_dir = os.path.dirname(os.path.abspath(__file__))
     result = subprocess.run(
@@ -74,6 +73,10 @@ def startup() -> None:
         raise RuntimeError(f"Alembic upgrade failed: {result.stderr or result.stdout}")
     _seed_locations_if_empty()
     _load_chargers_from_db()
+
+
+if os.environ.get("TESTING") != "true":
+    app.on_event("startup")(_startup)
 
 
 def _load_chargers_from_db() -> None:
