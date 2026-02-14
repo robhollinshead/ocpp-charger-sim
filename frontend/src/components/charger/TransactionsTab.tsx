@@ -3,6 +3,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Play, Square, Zap, Clock, Battery } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -11,7 +18,10 @@ import {
   useStartTransaction,
   useStopTransaction,
 } from '@/api/chargers';
+import { useVehicles } from '@/api/vehicles';
 import type { EvseStatusResponse } from '@/types/ocpp';
+
+const CUSTOM_IDTAG_VALUE = '__custom__';
 
 const CHARGER_DETAIL_POLL_MS = 5000;
 
@@ -32,6 +42,11 @@ function evseToActiveTx(evse: EvseStatusResponse) {
 export function TransactionsTab({ chargePointId, locationId }: TransactionsTabProps) {
   const [idTag, setIdTag] = useState('');
   const [connectorId, setConnectorId] = useState('1');
+
+  const { data: vehicles = [] } = useVehicles(locationId);
+  const idTagOptions = vehicles.flatMap((v) =>
+    v.idTags.map((idTagVal) => ({ idTag: idTagVal, vehicleName: v.name }))
+  );
 
   const { data: charger, refetch: refetchCharger } = useChargerDetail(chargePointId, {
     refetchInterval: (query) => {
@@ -115,15 +130,43 @@ export function TransactionsTab({ chargePointId, locationId }: TransactionsTabPr
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-end gap-4">
-            <div className="flex-1 space-y-2">
-              <label className="text-sm text-muted-foreground">ID Tag</label>
-              <Input
-                placeholder="Enter RFID tag or token..."
-                value={idTag}
-                onChange={(e) => setIdTag(e.target.value)}
-                className="bg-secondary border-border font-mono"
-              />
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="flex-1 min-w-[200px] space-y-2">
+              <label className="text-sm text-muted-foreground" id="idtag-label">
+                ID Tag (from list or custom)
+              </label>
+              <div className="flex gap-2">
+                <Select
+                  value={idTagOptions.some((o) => o.idTag === idTag) ? idTag : CUSTOM_IDTAG_VALUE}
+                  onValueChange={(value) => {
+                    if (value === CUSTOM_IDTAG_VALUE) {
+                      setIdTag('');
+                    } else {
+                      setIdTag(value);
+                    }
+                  }}
+                  aria-labelledby="idtag-label"
+                >
+                  <SelectTrigger className="w-[200px] shrink-0 bg-secondary border-border">
+                    <SelectValue placeholder="Choose or type below" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={CUSTOM_IDTAG_VALUE}>Enter custom idTag…</SelectItem>
+                    {idTagOptions.map((o) => (
+                      <SelectItem key={`${o.idTag}-${o.vehicleName}`} value={o.idTag}>
+                        {o.idTag} — {o.vehicleName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  placeholder="Enter RFID tag or token..."
+                  value={idTag}
+                  onChange={(e) => setIdTag(e.target.value)}
+                  className="flex-1 bg-secondary border-border font-mono"
+                  aria-label="ID Tag value"
+                />
+              </div>
             </div>
             <div className="w-24 space-y-2">
               <label className="text-sm text-muted-foreground">Connector</label>
