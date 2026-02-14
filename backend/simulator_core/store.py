@@ -12,6 +12,7 @@ _DEFAULT_CONFIG = {
     "ClockAlignedDataInterval": 900,
     "AuthorizeRemoteTxRequests": True,
     "LocalAuthListEnabled": True,
+    "OCPPAuthorizationEnabled": True,
     "voltage_V": 230.0,
 }
 

@@ -15,6 +15,7 @@ const EDITABLE_KEYS = [
   { key: 'ClockAlignedDataInterval' as const, type: 'number' as const, label: 'ClockAlignedDataInterval' },
   { key: 'AuthorizeRemoteTxRequests' as const, type: 'boolean' as const, label: 'AuthorizeRemoteTxRequests' },
   { key: 'LocalAuthListEnabled' as const, type: 'boolean' as const, label: 'LocalAuthListEnabled' },
+  { key: 'OCPPAuthorizationEnabled' as const, type: 'boolean' as const, label: 'OCPPAuthorizationEnabled' },
 ] as const;
 
 interface ConfigurationTabProps {
@@ -30,6 +31,7 @@ export function ConfigurationTab({ charger }: ConfigurationTabProps) {
     ClockAlignedDataInterval: 900,
     AuthorizeRemoteTxRequests: true,
     LocalAuthListEnabled: true,
+    OCPPAuthorizationEnabled: true,
   };
 
   const initialEditable = useMemo(() => {

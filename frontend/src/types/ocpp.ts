@@ -93,6 +93,7 @@ export interface ChargerConfigUpdate {
   ClockAlignedDataInterval?: number;
   AuthorizeRemoteTxRequests?: boolean;
   LocalAuthListEnabled?: boolean;
+  OCPPAuthorizationEnabled?: boolean;
 }
 
 

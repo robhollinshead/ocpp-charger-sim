@@ -103,6 +103,7 @@ _KNOWN_CONFIG_KEYS = frozenset({
     "ClockAlignedDataInterval",
     "AuthorizeRemoteTxRequests",
     "LocalAuthListEnabled",
+    "OCPPAuthorizationEnabled",
     "voltage_V",
 })
 
@@ -118,6 +119,7 @@ _INT_CONFIG_KEYS = frozenset({
 _BOOL_CONFIG_KEYS = frozenset({
     "AuthorizeRemoteTxRequests",
     "LocalAuthListEnabled",
+    "OCPPAuthorizationEnabled",
 })
 
 # Map our EvseState to OCPP ChargePointStatus
@@ -381,9 +383,9 @@ class SimulatorChargePoint(ChargePoint):
 
     async def start_transaction(self, connector_id: int, id_tag: str) -> Optional[int]:
         """
-        Start charging session: Preparing, send StartTransaction, await CSMS response.
-        If Accepted: Charging + metering loop. If Invalid: back to Available.
-        Returns transaction_id or None on failure.
+        Start charging session: Preparing, optionally Authorize, then StartTransaction.
+        If OCPPAuthorizationEnabled: send Authorize first; only on Accepted proceed to StartTransaction.
+        If FreeVend: go straight to StartTransaction. Returns transaction_id or None on failure.
         """
         if not self._charger:
             return None
@@ -394,6 +396,30 @@ class SimulatorChargePoint(ChargePoint):
             return None
         await self.send_status_notification(connector_id, EvseState.Preparing)
 
+        if self._charger.is_ocpp_authorization_enabled():
+            try:
+                auth_req = call.AuthorizePayload(id_tag=id_tag)
+                auth_resp: call_result.AuthorizePayload | None = await self.call(auth_req)
+            except Exception as e:
+                LOG.warning("Authorize call failed: %s", e)
+                evse.transition_to(EvseState.Available)
+                await self.send_status_notification(connector_id, EvseState.Available)
+                return None
+            if auth_resp is None:
+                LOG.warning("Authorize returned CallError or empty response; treating as rejected")
+                evse.transition_to(EvseState.Available)
+                await self.send_status_notification(connector_id, EvseState.Available)
+                return None
+            id_tag_info = auth_resp.id_tag_info
+            status_val = id_tag_info["status"] if isinstance(id_tag_info, dict) else id_tag_info.status
+            auth_accepted = status_val == AuthorizationStatus.accepted or (
+                isinstance(status_val, str) and status_val.lower() == "accepted"
+            )
+            if not auth_accepted:
+                evse.transition_to(EvseState.Available)
+                await self.send_status_notification(connector_id, EvseState.Available)
+                return None
+
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
         req = call.StartTransactionPayload(
             connector_id=connector_id,
@@ -402,9 +428,14 @@ class SimulatorChargePoint(ChargePoint):
             timestamp=now,
         )
         try:
-            resp: call_result.StartTransactionPayload = await self.call(req)
+            resp: call_result.StartTransactionPayload | None = await self.call(req)
         except Exception as e:
             LOG.warning("StartTransaction call failed: %s", e)
+            evse.transition_to(EvseState.Available)
+            await self.send_status_notification(connector_id, EvseState.Available)
+            return None
+        if resp is None:
+            LOG.warning("StartTransaction returned CallError or empty response; treating as rejected")
             evse.transition_to(EvseState.Available)
             await self.send_status_notification(connector_id, EvseState.Available)
             return None

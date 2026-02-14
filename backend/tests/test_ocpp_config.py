@@ -29,6 +29,7 @@ def charger_with_config():
             "ClockAlignedDataInterval": 900,
             "AuthorizeRemoteTxRequests": True,
             "LocalAuthListEnabled": True,
+            "OCPPAuthorizationEnabled": True,
             "voltage_V": 230.0,
         },
     )
@@ -51,6 +52,7 @@ async def test_get_configuration_no_keys_returns_all_known(charge_point):
     assert "HeartbeatInterval" in keys_returned
     assert "voltage_V" in keys_returned
     assert "AuthorizeRemoteTxRequests" in keys_returned
+    assert "OCPPAuthorizationEnabled" in keys_returned
     assert result.unknown_key == []
 
 
@@ -146,3 +148,11 @@ async def test_change_configuration_no_charger_rejected(mock_connection):
     cp = SimulatorChargePoint("CP_TEST", mock_connection)
     result = await cp.on_change_configuration(key="HeartbeatInterval", value="60")
     assert result.status == ConfigurationStatus.rejected
+
+
+@pytest.mark.asyncio
+async def test_change_configuration_ocpp_authorization_enabled(charge_point):
+    """ChangeConfiguration accepts OCPPAuthorizationEnabled (boolean)."""
+    with patch("simulator_core.ocpp_client.persist_charger_config"):
+        await charge_point.on_change_configuration(key="OCPPAuthorizationEnabled", value="false")
+    assert charge_point._charger.config["OCPPAuthorizationEnabled"] is False

@@ -10,6 +10,7 @@ DEFAULT_CHARGER_CONFIG: dict = {
     "ClockAlignedDataInterval": 900,
     "AuthorizeRemoteTxRequests": True,
     "LocalAuthListEnabled": True,
+    "OCPPAuthorizationEnabled": True,
 }
 
 
@@ -43,6 +44,7 @@ class ChargerConfigUpdate(BaseModel):
     ClockAlignedDataInterval: int | None = None
     AuthorizeRemoteTxRequests: bool | None = None
     LocalAuthListEnabled: bool | None = None
+    OCPPAuthorizationEnabled: bool | None = None
 
 
 class MeterSnapshot(BaseModel):
