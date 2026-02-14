@@ -11,6 +11,7 @@ build/
 
 # IDE / OS
 .idea/
+.cursor/
 .DS_Store
 *.swp
 *.swo
