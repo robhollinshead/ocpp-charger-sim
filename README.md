@@ -70,14 +70,36 @@ Tests use an in-memory DB and never touch production; see **Database safety** an
 
 ```
 charger-sim-ocpp/
-├── backend/          FastAPI service (health, future OCPP simulator logic)
+├── backend/          FastAPI service (OCPP simulator core, API)
 ├── frontend/         React + Vite + TypeScript UI
+├── docs/             Technical documentation (architecture, OCPP support, UI guide, etc.)
+├── scripts/          Doc tooling (screenshot capture, PDF build)
 ├── data/             Optional CSV/JSON for charger and vehicle import
 ├── plans/            Implementation and OCPP design docs
 ├── Dockerfile        Multi-stage build (frontend + backend)
 ├── docker-compose.yml
 └── README.md
 ```
+
+## Technical documentation
+
+Markdown docs are in [docs/](docs/). Start with [docs/README.md](docs/README.md) for the index (architecture, OCPP support, edge cases, UI guide, out-of-scope).
+
+### Technical documentation (PDF)
+
+To generate a PDF that includes the docs (and optional UI screenshots):
+
+1. **Install doc dependencies** (from repo root): `npm install`
+2. **Optional — capture screenshots:** Run the frontend (and optionally the backend), then:
+   ```bash
+   npm run docs:screenshots
+   ```
+   Screenshots are written to `docs/screenshots/` and referenced in [docs/ui-guide.md](docs/ui-guide.md).
+3. **Build the PDF:**
+   ```bash
+   npm run docs:pdf
+   ```
+   Output: `docs/build/technical-documentation.pdf`.
 
 ## Next steps
 

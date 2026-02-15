@@ -1,0 +1,20 @@
+flowchart LR
+    subgraph ui [Web UI]
+        Browser[Browser]
+    end
+    subgraph backend [Backend]
+        API[FastAPI API]
+        Store[Simulator Store]
+        OCPP[OCPP Client]
+    end
+    subgraph persistence [Persistence]
+        DB[(SQLite)]
+    end
+    subgraph external [External]
+        CSMS[CSMS]
+    end
+    Browser -->|REST| API
+    API --> Store
+    API --> DB
+    Store --> OCPP
+    OCPP <-->|WebSocket| CSMS

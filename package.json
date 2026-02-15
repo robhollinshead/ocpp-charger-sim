@@ -1,0 +1,14 @@
+{
+  "name": "charger-sim-ocpp",
+  "private": true,
+  "description": "OCPP 1.6J charger simulator",
+  "scripts": {
+    "docs:screenshots": "node scripts/capture-screenshots.js",
+    "docs:pdf": "node docs/scripts/build-pdf.js"
+  },
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^11.0.0",
+    "playwright": "^1.49.0",
+    "md-to-pdf": "^5.2.5"
+  }
+}
