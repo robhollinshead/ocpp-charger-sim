@@ -37,3 +37,5 @@ class Charger(Base):
     security_profile: Mapped[str] = mapped_column(String(32), nullable=False, default="none")
     # Password for Basic auth (username = charge_point_id). Stored when security_profile is "basic"; never returned in API.
     basic_auth_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Power type: "AC" (3-phase grid) or "DC" (battery pack). Fixed at creation.
+    power_type: Mapped[str] = mapped_column(String(4), nullable=False, default="DC")

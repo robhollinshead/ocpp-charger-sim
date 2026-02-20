@@ -23,6 +23,7 @@ class Charger:
         "charge_point_vendor",
         "charge_point_model",
         "firmware_version",
+        "power_type",
         "_ocpp_client",
         "_stop_connect",
         "_ocpp_log",
@@ -41,6 +42,7 @@ class Charger:
         charge_point_vendor: str = "FastCharge",
         charge_point_model: str = "Pro 150",
         firmware_version: str = "2.4.1",
+        power_type: str = "DC",
     ) -> None:
         self.charge_point_id = charge_point_id
         self.evses = list(evses) if evses else []
@@ -52,10 +54,14 @@ class Charger:
         self.charge_point_vendor = charge_point_vendor
         self.charge_point_model = charge_point_model
         self.firmware_version = firmware_version
+        self.power_type = power_type
         self._ocpp_client: Any = None  # Optional running OCPP client
         self._stop_connect = False
         self._ocpp_log: list[dict[str, Any]] = []  # Session-scoped OCPP message log
         self._vehicle_resolver: Optional[Callable[[str], Optional[tuple[float, float]]]] = None
+        # Propagate power_type to EVSEs
+        for evse in self.evses:
+            evse.power_type = power_type
 
     def set_vehicle_resolver(
         self, resolver: Optional[Callable[[str], Optional[tuple[float, float]]]]

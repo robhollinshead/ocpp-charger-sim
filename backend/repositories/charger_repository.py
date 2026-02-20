@@ -21,6 +21,7 @@ def create_charger(
     charge_point_vendor: str = "FastCharge",
     charge_point_model: str = "Pro 150",
     firmware_version: str = "2.4.1",
+    power_type: str = "DC",
 ) -> ChargerModel:
     """Create a charger with evse_count EVSEs (evse_id 1..evse_count), commit, and return it."""
     charger = ChargerModel(
@@ -33,6 +34,7 @@ def create_charger(
         charge_point_model=charge_point_model,
         firmware_version=firmware_version,
         config=dict(DEFAULT_CHARGER_CONFIG),
+        power_type=power_type,
     )
     session.add(charger)
     session.flush()  # get charger.id before adding evses

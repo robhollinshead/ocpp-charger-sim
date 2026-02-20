@@ -64,12 +64,13 @@ def _hydrate_charger(db: Session, charge_point_id: str) -> SimCharger | None:
     if sim is not None:
         sim.set_vehicle_resolver(lambda id_tag: _resolve_vehicle_for_soc(id_tag))
         return sim
+    power_type = getattr(row, "power_type", "DC") or "DC"
     evse_rows = repo_list_evses_by_charger_id(db, row.id)
     if not evse_rows:
-        evses = [EVSE(evse_id=1, max_power_W=22000.0)]
+        evses = [EVSE(evse_id=1, max_power_W=22000.0, power_type=power_type)]
     else:
         evses = [
-            EVSE(evse_id=e.evse_id, max_power_W=22000.0)
+            EVSE(evse_id=e.evse_id, max_power_W=22000.0, power_type=power_type)
             for e in evse_rows
         ]
     config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
@@ -84,13 +85,14 @@ def _hydrate_charger(db: Session, charge_point_id: str) -> SimCharger | None:
         charge_point_vendor=row.charge_point_vendor or "FastCharge",
         charge_point_model=row.charge_point_model or "Pro 150",
         firmware_version=row.firmware_version or "2.4.1",
+        power_type=power_type,
     )
     store_add(sim)
     sim.set_vehicle_resolver(lambda id_tag: _resolve_vehicle_for_soc(id_tag))
     return sim
 
 
-def _sim_charger_to_summary(c: SimCharger, location_id: str, connection_url: str, charger_name: str, ocpp_version: str) -> ChargerSummary:
+def _sim_charger_to_summary(c: SimCharger, location_id: str, connection_url: str, charger_name: str, ocpp_version: str, power_type: str = "DC") -> ChargerSummary:
     """Build ChargerSummary from simulator Charger and DB metadata."""
     return ChargerSummary(
         id=c.charge_point_id,
@@ -101,6 +103,7 @@ def _sim_charger_to_summary(c: SimCharger, location_id: str, connection_url: str
         location_id=location_id,
         evse_count=len(c.evses),
         connected=c.is_connected,
+        power_type=power_type if power_type in ("AC", "DC") else "DC",
     )
 
 
@@ -118,6 +121,7 @@ def _sim_charger_to_detail(
     *,
     security_profile: str = "none",
     basic_auth_password_set: bool = False,
+    power_type: str = "DC",
 ) -> ChargerDetail:
     """Build ChargerDetail from simulator Charger and DB metadata."""
     evse_statuses = [
@@ -151,6 +155,7 @@ def _sim_charger_to_detail(
         connected=c.is_connected,
         security_profile=security_profile if security_profile in ("none", "basic") else "none",
         basic_auth_password_set=basic_auth_password_set,
+        power_type=power_type if power_type in ("AC", "DC") else "DC",
     )
 
 
@@ -162,11 +167,12 @@ def list_chargers_by_location(location_id: str, db: Session = Depends(get_db)) -
     db_chargers = repo_list_chargers_by_location(db, location_id)
     result = []
     for row in db_chargers:
+        power_type = getattr(row, "power_type", "DC") or "DC"
         sim = store_get_by_id(row.charge_point_id)
         if sim:
             result.append(
                 _sim_charger_to_summary(
-                    sim, row.location_id, row.connection_url, row.charger_name, row.ocpp_version
+                    sim, row.location_id, row.connection_url, row.charger_name, row.ocpp_version, power_type
                 )
             )
         else:
@@ -180,6 +186,7 @@ def list_chargers_by_location(location_id: str, db: Session = Depends(get_db)) -
                     location_id=row.location_id,
                     evse_count=0,
                     connected=False,
+                    power_type=power_type,
                 )
             )
     return result
@@ -210,6 +217,7 @@ def create_charger(
             charge_point_vendor=body.charge_point_vendor,
             charge_point_model=body.charge_point_model,
             firmware_version=body.firmware_version,
+            power_type=body.power_type,
         )
     except IntegrityError as e:
         if "charge_point_id" in str(e) or "unique" in str(e).lower():
@@ -218,8 +226,9 @@ def create_charger(
                 detail="charge_point_id already exists",
             ) from e
         raise
+    power_type = row.power_type if hasattr(row, "power_type") else "DC"
     evses = [
-        EVSE(evse_id=i, max_power_W=22000.0)
+        EVSE(evse_id=i, max_power_W=22000.0, power_type=power_type)
         for i in range(1, body.evse_count + 1)
     ]
     config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
@@ -234,10 +243,11 @@ def create_charger(
         charge_point_vendor=row.charge_point_vendor or "FastCharge",
         charge_point_model=row.charge_point_model or "Pro 150",
         firmware_version=row.firmware_version or "2.4.1",
+        power_type=power_type,
     )
     store_add(sim)
     return _sim_charger_to_summary(
-        sim, row.location_id, row.connection_url, row.charger_name, row.ocpp_version
+        sim, row.location_id, row.connection_url, row.charger_name, row.ocpp_version, power_type
     )
 
 
@@ -249,6 +259,7 @@ def get_charger(charge_point_id: str, db: Session = Depends(get_db)) -> ChargerD
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
     row = repo_get_charger(db, charge_point_id)
     assert row is not None
+    power_type = getattr(row, "power_type", "DC") or "DC"
     return _sim_charger_to_detail(
         sim,
         row.location_id,
@@ -257,6 +268,7 @@ def get_charger(charge_point_id: str, db: Session = Depends(get_db)) -> ChargerD
         row.ocpp_version,
         security_profile=row.security_profile,
         basic_auth_password_set=_basic_auth_password_set(row),
+        power_type=power_type,
     )
 
 
@@ -423,6 +435,7 @@ def update_charger_config(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
         row = repo_get_charger(db, charge_point_id)
         assert row is not None
+        power_type = getattr(row, "power_type", "DC") or "DC"
         return _sim_charger_to_detail(
             sim,
             row.location_id,
@@ -431,6 +444,7 @@ def update_charger_config(
             row.ocpp_version,
             security_profile=row.security_profile,
             basic_auth_password_set=_basic_auth_password_set(row),
+            power_type=power_type,
         )
     row = repo_update_charger_config(db, charge_point_id, updates)
     if row is None:
@@ -442,6 +456,7 @@ def update_charger_config(
         sim = _hydrate_charger(db, charge_point_id)
     if sim is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
+    power_type = getattr(row, "power_type", "DC") or "DC"
     return _sim_charger_to_detail(
         sim,
         row.location_id,
@@ -450,6 +465,7 @@ def update_charger_config(
         row.ocpp_version,
         security_profile=row.security_profile,
         basic_auth_password_set=_basic_auth_password_set(row),
+        power_type=power_type,
     )
 
 
@@ -471,6 +487,7 @@ def update_charger(
     )
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
+    power_type = getattr(row, "power_type", "DC") or "DC"
     sim = store_get_by_id(charge_point_id)
     if sim:
         if body.connection_url is not None:
@@ -487,6 +504,7 @@ def update_charger(
             row.ocpp_version,
             security_profile=row.security_profile,
             basic_auth_password_set=_basic_auth_password_set(row),
+            power_type=power_type,
         )
     config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
     return _sim_charger_to_detail(
@@ -501,6 +519,7 @@ def update_charger(
             charge_point_vendor=row.charge_point_vendor or "FastCharge",
             charge_point_model=row.charge_point_model or "Pro 150",
             firmware_version=row.firmware_version or "2.4.1",
+            power_type=power_type,
         ),
         row.location_id,
         row.connection_url,
@@ -508,6 +527,7 @@ def update_charger(
         row.ocpp_version,
         security_profile=row.security_profile,
         basic_auth_password_set=_basic_auth_password_set(row),
+        power_type=power_type,
     )
 
 

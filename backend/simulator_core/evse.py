@@ -1,9 +1,14 @@
 """EVSE state machine and internal meter state (OCPP 1.6)."""
+import math
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
 from simulator_core.dc_voltage import DEFAULT_CELLS, get_pack_voltage_V
+
+# AC charger constants (3-phase, 400V line-to-line)
+AC_GRID_VOLTAGE_V = 400.0
+SQRT3 = math.sqrt(3)
 
 
 class EvseState(str, Enum):
@@ -58,12 +63,14 @@ class EVSE:
         "start_soc_pct",
         "battery_capacity_Wh",
         "soc_pct",
+        "power_type",
     )
 
     def __init__(
         self,
         evse_id: int,
         max_power_W: float = 22000.0,  # not currently used as a hard limit; SetChargingProfile dictates power
+        power_type: str = "DC",
     ) -> None:
         self.evse_id = evse_id
         self.state = EvseState.Available
@@ -79,6 +86,7 @@ class EVSE:
         self.start_soc_pct = 20.0
         self.battery_capacity_Wh = 100_000.0
         self.soc_pct = 20.0
+        self.power_type = power_type  # "AC" or "DC", propagated from parent Charger
 
     def transition_to(self, new_state: EvseState) -> bool:
         """Validate and perform state transition. Returns True if applied."""
@@ -102,7 +110,9 @@ class EVSE:
         return self.offered_limit_W
 
     def get_voltage_V(self) -> float:
-        """Compute pack voltage from current SOC using sigmoid OCV model."""
+        """Compute voltage: AC returns fixed 400V grid voltage, DC uses sigmoid OCV model."""
+        if self.power_type == "AC":
+            return AC_GRID_VOLTAGE_V
         return get_pack_voltage_V(self.soc_pct, DEFAULT_CELLS)
 
     def get_meter_snapshot(self) -> dict[str, float]:
@@ -113,6 +123,14 @@ class EVSE:
             "voltage_V": self.get_voltage_V(),
             "current_A": self.current_A,
         }
+
+    def ac_current_to_power_W(self, current_A: float) -> float:
+        """Convert current (A) to power (W) for 3-phase AC: P = sqrt(3) * V * I."""
+        return SQRT3 * AC_GRID_VOLTAGE_V * current_A
+
+    def ac_power_to_current_A(self, power_W: float) -> float:
+        """Convert power (W) to current (A) for 3-phase AC: I = P / (sqrt(3) * V)."""
+        return power_W / (SQRT3 * AC_GRID_VOLTAGE_V) if power_W > 0 else 0.0
 
     def start_transaction(
         self,

@@ -12,6 +12,8 @@ CHARGER_DEFAULT_MODEL = "Pro 150"
 CHARGER_DEFAULT_FIRMWARE = "0.0.1"
 CHARGER_DEFAULT_EVSE_COUNT = 1
 CHARGER_DEFAULT_OCPP = "1.6"
+CHARGER_DEFAULT_POWER_TYPE = "DC"
+VALID_POWER_TYPES = {"AC", "DC"}
 
 
 def _get_str(row: dict[str, Any], key: str) -> str | None:
@@ -67,6 +69,15 @@ def validate_charger_row(
     if get_charger_by_charge_point_id(db, charge_point_id) is not None:
         return False, None, f"charger already exists with charge_point_id '{charge_point_id}'"
 
+    # Validate power_type
+    power_type_raw = _get_str(row, "power_type")
+    if power_type_raw:
+        power_type = power_type_raw.upper()
+        if power_type not in VALID_POWER_TYPES:
+            return False, None, f"power_type must be 'AC' or 'DC', got '{power_type_raw}'"
+    else:
+        power_type = CHARGER_DEFAULT_POWER_TYPE
+
     normalized = {
         "connection_url": connection_url,
         "charger_name": charger_name,
@@ -76,6 +87,7 @@ def validate_charger_row(
         "firmware_version": _get_str(row, "firmware_version") or CHARGER_DEFAULT_FIRMWARE,
         "evse_count": evse_count,
         "ocpp_version": _get_str(row, "ocpp_version") or CHARGER_DEFAULT_OCPP,
+        "power_type": power_type,
     }
     return True, normalized, ""
 

@@ -3,6 +3,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+# Power type: AC (3-phase grid) or DC (battery pack OCV).
+PowerType = Literal["AC", "DC"]
+
 
 # Default OCPP config (single source of truth for new and backfilled chargers).
 DEFAULT_CHARGER_CONFIG: dict = {
@@ -27,6 +30,7 @@ class ChargerCreate(BaseModel):
     charge_point_vendor: str = Field(default="FastCharge")
     charge_point_model: str = Field(default="Pro 150")
     firmware_version: str = Field(default="2.4.1")
+    power_type: PowerType = Field(default="DC")
 
 
 class ChargerUpdate(BaseModel):
@@ -102,6 +106,7 @@ class ChargerSummary(BaseModel):
     location_id: str
     evse_count: int
     connected: bool = False
+    power_type: PowerType = "DC"
 
 
 class ChargerDetail(BaseModel):
@@ -121,6 +126,7 @@ class ChargerDetail(BaseModel):
     connected: bool = False
     security_profile: Literal["none", "basic"] = "none"
     basic_auth_password_set: bool = False
+    power_type: PowerType = "DC"
 
 
 class OCPPLogEntry(BaseModel):

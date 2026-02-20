@@ -19,7 +19,7 @@ from utils.import_validators import validate_charger_row, validate_vehicle_row
 router = APIRouter(tags=["import"])
 
 # --- Template content (spec) ---
-CHARGERS_CSV_TEMPLATE = "connection_url,charger_name,charge_point_id,charge_point_vendor,charge_point_model,firmware_version,number_of_evses,ocpp_version\n\n"
+CHARGERS_CSV_TEMPLATE = "connection_url,charger_name,charge_point_id,charge_point_vendor,charge_point_model,firmware_version,number_of_evses,ocpp_version,power_type\n\n"
 CHARGERS_JSON_TEMPLATE = """[
   {
     "connection_url": "ws://example.com/ocpp/A01",
@@ -29,7 +29,8 @@ CHARGERS_JSON_TEMPLATE = """[
     "charge_point_model": "Pro 150",
     "firmware_version": "0.0.1",
     "number_of_evses": 1,
-    "ocpp_version": "1.6"
+    "ocpp_version": "1.6",
+    "power_type": "DC"
   }
 ]
 """
@@ -85,6 +86,7 @@ async def import_chargers(
             failed.append({"row": raw_row, "error": err})
             continue
         try:
+            power_type = normalized.get("power_type", "DC")
             row = repo_create_charger(
                 db,
                 location_id=location_id,
@@ -96,12 +98,14 @@ async def import_chargers(
                 charge_point_vendor=normalized["charge_point_vendor"],
                 charge_point_model=normalized["charge_point_model"],
                 firmware_version=normalized["firmware_version"],
+                power_type=power_type,
             )
         except IntegrityError:
             failed.append({"row": raw_row, "error": f"charger already exists with charge_point_id '{normalized['charge_point_id']}'"})
             continue
+        power_type = getattr(row, "power_type", "DC") or "DC"
         evses = [
-            EVSE(evse_id=i, max_power_W=22000.0)
+            EVSE(evse_id=i, max_power_W=22000.0, power_type=power_type)
             for i in range(1, normalized["evse_count"] + 1)
         ]
         config = dict(DEFAULT_CHARGER_CONFIG)
@@ -116,6 +120,7 @@ async def import_chargers(
             charge_point_vendor=row.charge_point_vendor or "FastCharge",
             charge_point_model=row.charge_point_model or "Pro 150",
             firmware_version=row.firmware_version or "0.0.1",
+            power_type=power_type,
         )
         store_add(sim)
         success.append(
@@ -128,6 +133,7 @@ async def import_chargers(
                 location_id=row.location_id,
                 evse_count=len(evses),
                 connected=False,
+                power_type=power_type,
             ).model_dump()
         )
 

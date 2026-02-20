@@ -3,6 +3,7 @@ import asyncio
 import base64
 import json
 import logging
+import math
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -24,7 +25,7 @@ from ocpp.v16.enums import (
 from simulator_core.charger import Charger
 from simulator_core.config_sync import persist_charger_config
 from simulator_core.dc_voltage import get_pack_voltage_V
-from simulator_core.evse import EVSE, EvseState
+from simulator_core.evse import EVSE, EvseState, AC_GRID_VOLTAGE_V, SQRT3
 from simulator_core.meter_engine import start_metering_loop
 from simulator_core.meter_engine import MeterValuesPayload as DictMeterPayload
 
@@ -299,7 +300,12 @@ class SimulatorChargePoint(ChargePoint):
         cs_charging_profiles: dict,
         **kwargs: Any,
     ) -> call_result.SetChargingProfilePayload:
-        """Extract power limit and apply to EVSE (FR-5)."""
+        """Extract power limit and apply to EVSE (FR-5).
+
+        When chargingRateUnit is 'A' (Amps):
+        - AC chargers: Convert using 3-phase formula P = sqrt(3) * 400V * I
+        - DC chargers: Convert using pack voltage at 50% SoC
+        """
         if not self._charger:
             return call_result.SetChargingProfilePayload(status=ChargingProfileStatus.rejected)
         evse = self._charger.get_evse(connector_id)
@@ -317,7 +323,13 @@ class SimulatorChargePoint(ChargePoint):
             limit = float(first.get("limit", 0.0))
             unit = (schedule.get("charging_rate_unit") or schedule.get("chargingRateUnit") or "W").upper()
             if unit == "A":
-                limit = limit * get_pack_voltage_V(50.0)
+                power_type = getattr(self._charger, "power_type", "DC")
+                if power_type == "AC":
+                    # AC: P = sqrt(3) * V * I for 3-phase at 400V line-to-line
+                    limit = limit * SQRT3 * AC_GRID_VOLTAGE_V
+                else:
+                    # DC: Use pack voltage at 50% SoC for conversion
+                    limit = limit * get_pack_voltage_V(50.0)
             evse.set_offered_limit_W(limit)
             return call_result.SetChargingProfilePayload(status=ChargingProfileStatus.accepted)
         except (TypeError, KeyError, ValueError) as e:
@@ -483,7 +495,8 @@ class SimulatorChargePoint(ChargePoint):
             await self.call(ocpp_payload)
 
         interval_s = self._charger.get_meter_interval_s()
-        task, stop_event = start_metering_loop(evse, send_meter_values, interval_s)
+        power_type = getattr(self._charger, "power_type", "DC")
+        task, stop_event = start_metering_loop(evse, send_meter_values, interval_s, power_type)
         self._meter_tasks[connector_id] = (task, stop_event)
         return resp.transaction_id
 
