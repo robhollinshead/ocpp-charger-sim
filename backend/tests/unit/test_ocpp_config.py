@@ -22,7 +22,7 @@ def charger_with_config():
     """Charger with known config keys."""
     return Charger(
         charge_point_id="CP_TEST",
-        evses=[EVSE(evse_id=1, max_power_W=22000.0, voltage_V=230.0)],
+        evses=[EVSE(evse_id=1, max_power_W=22000.0)],
         config={
             "HeartbeatInterval": 120,
             "ConnectionTimeOut": 60,
@@ -31,7 +31,6 @@ def charger_with_config():
             "AuthorizeRemoteTxRequests": True,
             "LocalAuthListEnabled": True,
             "OCPPAuthorizationEnabled": True,
-            "voltage_V": 230.0,
         },
     )
 
@@ -51,7 +50,6 @@ async def test_get_configuration_no_keys_returns_all_known(charge_point):
     assert result is not None
     keys_returned = [kv.key for kv in result.configuration_key]
     assert "HeartbeatInterval" in keys_returned
-    assert "voltage_V" in keys_returned
     assert "AuthorizeRemoteTxRequests" in keys_returned
     assert "OCPPAuthorizationEnabled" in keys_returned
     assert result.unknown_key == []
@@ -60,11 +58,11 @@ async def test_get_configuration_no_keys_returns_all_known(charge_point):
 @pytest.mark.asyncio
 async def test_get_configuration_specific_keys(charge_point):
     """GetConfiguration with specific keys returns those known and unknown_key for rest."""
-    result = await charge_point.on_get_configuration(key=["HeartbeatInterval", "UnknownKey", "voltage_V"])
+    result = await charge_point.on_get_configuration(key=["HeartbeatInterval", "UnknownKey", "MeterValuesSampleInterval"])
     assert result is not None
     keys_returned = [kv.key for kv in result.configuration_key]
     assert "HeartbeatInterval" in keys_returned
-    assert "voltage_V" in keys_returned
+    assert "MeterValuesSampleInterval" in keys_returned
     assert "UnknownKey" not in keys_returned
     assert "UnknownKey" in result.unknown_key
 
@@ -106,15 +104,6 @@ async def test_change_configuration_boolean(charge_point):
     with patch("simulator_core.ocpp_client.persist_charger_config"):
         await charge_point.on_change_configuration(key="AuthorizeRemoteTxRequests", value="false")
     assert charge_point._charger.config["AuthorizeRemoteTxRequests"] is False
-
-
-@pytest.mark.asyncio
-async def test_change_configuration_voltage(charge_point):
-    """ChangeConfiguration accepts float for voltage_V."""
-    with patch("simulator_core.ocpp_client.persist_charger_config"):
-        result = await charge_point.on_change_configuration(key="voltage_V", value="400.5")
-    assert result.status == ConfigurationStatus.accepted
-    assert charge_point._charger.config["voltage_V"] == 400.5
 
 
 @pytest.mark.asyncio

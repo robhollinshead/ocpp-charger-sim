@@ -13,7 +13,6 @@ _DEFAULT_CONFIG = {
     "AuthorizeRemoteTxRequests": True,
     "LocalAuthListEnabled": True,
     "OCPPAuthorizationEnabled": True,
-    "voltage_V": 230.0,
 }
 
 
@@ -64,8 +63,8 @@ def seed_default() -> None:
     if _store:
         return
     evses = [
-        EVSE(evse_id=1, max_power_W=22000.0, voltage_V=230.0),
-        EVSE(evse_id=2, max_power_W=22000.0, voltage_V=230.0),
+        EVSE(evse_id=1, max_power_W=22000.0),
+        EVSE(evse_id=2, max_power_W=22000.0),
     ]
     charger = Charger(
         charge_point_id="CP_001",

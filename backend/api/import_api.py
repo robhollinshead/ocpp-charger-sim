@@ -101,11 +101,10 @@ async def import_chargers(
             failed.append({"row": raw_row, "error": f"charger already exists with charge_point_id '{normalized['charge_point_id']}'"})
             continue
         evses = [
-            EVSE(evse_id=i, max_power_W=22000.0, voltage_V=230.0)
+            EVSE(evse_id=i, max_power_W=22000.0)
             for i in range(1, normalized["evse_count"] + 1)
         ]
         config = dict(DEFAULT_CHARGER_CONFIG)
-        config.setdefault("voltage_V", 230.0)
         sim = SimCharger(
             charge_point_id=row.charge_point_id,
             evses=evses,

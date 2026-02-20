@@ -18,7 +18,7 @@ def clear_store():
 
 def test_add_and_get_by_id():
     """add then get_by_id returns the charger."""
-    evse = EVSE(evse_id=1, max_power_W=22000.0, voltage_V=230.0)
+    evse = EVSE(evse_id=1, max_power_W=22000.0)
     charger = Charger(charge_point_id="CP-STORE-1", evses=[evse], config={})
     add(charger)
     found = get_by_id("CP-STORE-1")

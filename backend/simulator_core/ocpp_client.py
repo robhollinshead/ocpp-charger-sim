@@ -23,6 +23,7 @@ from ocpp.v16.enums import (
 
 from simulator_core.charger import Charger
 from simulator_core.config_sync import persist_charger_config
+from simulator_core.dc_voltage import get_pack_voltage_V
 from simulator_core.evse import EVSE, EvseState
 from simulator_core.meter_engine import start_metering_loop
 from simulator_core.meter_engine import MeterValuesPayload as DictMeterPayload
@@ -96,7 +97,7 @@ class LoggingWebSocket:
         await self._ws.close(code=code, reason=reason)
 
 
-# Known OCPP config keys (align with DEFAULT_CHARGER_CONFIG + voltage_V).
+# Known OCPP config keys (align with DEFAULT_CHARGER_CONFIG).
 _KNOWN_CONFIG_KEYS = frozenset({
     "HeartbeatInterval",
     "ConnectionTimeOut",
@@ -105,7 +106,6 @@ _KNOWN_CONFIG_KEYS = frozenset({
     "AuthorizeRemoteTxRequests",
     "LocalAuthListEnabled",
     "OCPPAuthorizationEnabled",
-    "voltage_V",
 })
 
 # Keys that accept integer values.
@@ -281,11 +281,6 @@ class SimulatorChargePoint(ChargePoint):
                 parsed = False
             else:
                 return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.rejected)
-        elif key == "voltage_V":
-            try:
-                parsed = float(value)
-            except (ValueError, TypeError):
-                return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.rejected)
         else:
             return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.not_supported)
 
@@ -322,7 +317,7 @@ class SimulatorChargePoint(ChargePoint):
             limit = float(first.get("limit", 0.0))
             unit = (schedule.get("charging_rate_unit") or schedule.get("chargingRateUnit") or "W").upper()
             if unit == "A":
-                limit = limit * (evse.voltage_V or 230.0)
+                limit = limit * get_pack_voltage_V(50.0)
             evse.set_offered_limit_W(limit)
             return call_result.SetChargingProfilePayload(status=ChargingProfileStatus.accepted)
         except (TypeError, KeyError, ValueError) as e:

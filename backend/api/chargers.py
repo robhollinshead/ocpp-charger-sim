@@ -66,15 +66,13 @@ def _hydrate_charger(db: Session, charge_point_id: str) -> SimCharger | None:
         return sim
     evse_rows = repo_list_evses_by_charger_id(db, row.id)
     if not evse_rows:
-        evses = [EVSE(evse_id=1, max_power_W=22000.0, voltage_V=230.0)]
+        evses = [EVSE(evse_id=1, max_power_W=22000.0)]
     else:
         evses = [
-            EVSE(evse_id=e.evse_id, max_power_W=22000.0, voltage_V=230.0)
+            EVSE(evse_id=e.evse_id, max_power_W=22000.0)
             for e in evse_rows
         ]
     config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
-    if "voltage_V" not in config:
-        config = {**config, "voltage_V": 230.0}
     sim = SimCharger(
         charge_point_id=row.charge_point_id,
         evses=evses,
@@ -132,7 +130,7 @@ def _sim_charger_to_detail(
             meter=MeterSnapshot(
                 energy_Wh=evse.energy_Wh,
                 power_W=evse.power_W,
-                voltage_V=evse.voltage_V,
+                voltage_V=evse.get_voltage_V(),
                 current_A=evse.current_A,
             ),
         )
@@ -221,11 +219,10 @@ def create_charger(
             ) from e
         raise
     evses = [
-        EVSE(evse_id=i, max_power_W=22000.0, voltage_V=230.0)
+        EVSE(evse_id=i, max_power_W=22000.0)
         for i in range(1, body.evse_count + 1)
     ]
     config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
-    config.setdefault("voltage_V", 230.0)
     sim = SimCharger(
         charge_point_id=row.charge_point_id,
         evses=evses,

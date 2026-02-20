@@ -37,16 +37,18 @@ def update_evse_meter(evse: EVSE, dt_s: float) -> None:
     Update EVSE internal meter state for elapsed time (FR-3).
     energy_Wh += power * dt; power = min(offered_limit, max_power); current = power / voltage.
     SoC = start_soc_pct + (session_energy_Wh / battery_capacity_Wh) * 100, capped at 100.
+    Voltage is computed from SoC using the sigmoid OCV model.
     """
     power_W = evse.get_effective_power_W()
     evse.power_W = power_W
     evse.energy_Wh += power_W * (dt_s / 3600.0)
-    evse.current_A = power_W / evse.voltage_V if evse.voltage_V else 0.0
     session_energy_Wh = evse.energy_Wh - evse._initial_energy_Wh
     evse.soc_pct = min(
         100.0,
         evse.start_soc_pct + (session_energy_Wh / evse.battery_capacity_Wh) * 100.0,
     )
+    voltage = evse.get_voltage_V()
+    evse.current_A = power_W / voltage if voltage else 0.0
 
 
 SendMeterValuesCb = Callable[[MeterValuesPayload], Awaitable[None]]

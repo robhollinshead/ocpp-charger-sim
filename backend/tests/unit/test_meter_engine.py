@@ -3,6 +3,7 @@ import asyncio
 
 import pytest
 
+from simulator_core.dc_voltage import get_pack_voltage_V
 from simulator_core.evse import EVSE, EvseState
 from simulator_core.meter_engine import (
     build_meter_values_payload,
@@ -15,7 +16,7 @@ pytestmark = pytest.mark.unit
 
 def test_build_meter_values_payload():
     """build_meter_values_payload returns OCPP-shaped dict with connectorId, transactionId, meterValue."""
-    evse = EVSE(evse_id=1, max_power_W=22000.0, voltage_V=230.0)
+    evse = EVSE(evse_id=1, max_power_W=22000.0)
     evse.transaction_id = 42
     evse.energy_Wh = 1000.0
     evse.power_W = 11000.0
@@ -35,7 +36,7 @@ def test_build_meter_values_payload():
 
 def test_update_evse_meter():
     """update_evse_meter updates power_W, energy_Wh, current_A, soc_pct."""
-    evse = EVSE(evse_id=1, max_power_W=22000.0, voltage_V=230.0)
+    evse = EVSE(evse_id=1, max_power_W=22000.0)
     evse.state = EvseState.Charging
     evse.transaction_id = 1
     evse._initial_energy_Wh = 0.0
@@ -50,21 +51,25 @@ def test_update_evse_meter():
     assert evse.soc_pct >= 20.0
 
 
-def test_update_evse_meter_zero_voltage():
-    """When voltage_V is 0, current_A stays 0."""
-    evse = EVSE(evse_id=1, voltage_V=0.0)
+def test_update_evse_meter_voltage_from_soc():
+    """Voltage is computed from SOC using the sigmoid OCV model."""
+    evse = EVSE(evse_id=1)
     evse.state = EvseState.Charging
     evse.transaction_id = 1
+    evse.soc_pct = 20.0
     evse.offered_limit_W = 11000.0
     update_evse_meter(evse, dt_s=60.0)
-    assert evse.current_A == 0.0
+    expected_voltage = get_pack_voltage_V(evse.soc_pct)
+    assert expected_voltage > 0
+    expected_current = 11000.0 / expected_voltage
+    assert abs(evse.current_A - expected_current) < 0.01
     assert evse.power_W == 11000.0
 
 
 @pytest.mark.asyncio
 async def test_start_metering_loop_sends_once_then_stops():
     """start_metering_loop runs until stop_event; callback receives payload."""
-    evse = EVSE(evse_id=1, voltage_V=230.0)
+    evse = EVSE(evse_id=1)
     evse.state = EvseState.Charging
     evse.transaction_id = 1
     evse.offered_limit_W = 11000.0

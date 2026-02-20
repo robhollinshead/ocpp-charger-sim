@@ -128,10 +128,6 @@ class Charger:
         """Heartbeat interval in seconds (default 120s)."""
         return int(self.config.get("HeartbeatInterval", 120))
 
-    def get_voltage_V(self) -> float:
-        """Default voltage for EVSEs (e.g. 230 AC, 400 DC)."""
-        return float(self.config.get("voltage_V", 230.0))
-
     def is_ocpp_authorization_enabled(self) -> bool:
         """True if charger should send Authorize to CSMS before StartTransaction (default True)."""
         return bool(self.config.get("OCPPAuthorizationEnabled", True))

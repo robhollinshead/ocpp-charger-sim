@@ -38,12 +38,11 @@ def charger_auth_enabled():
     """Charger with OCPPAuthorizationEnabled True."""
     return Charger(
         charge_point_id="CP_AUTH",
-        evses=[EVSE(evse_id=1, max_power_W=22000.0, voltage_V=230.0)],
+        evses=[EVSE(evse_id=1, max_power_W=22000.0)],
         config={
             "HeartbeatInterval": 120,
             "MeterValuesSampleInterval": 30,
             "OCPPAuthorizationEnabled": True,
-            "voltage_V": 230.0,
         },
     )
 
@@ -53,12 +52,11 @@ def charger_auth_disabled():
     """Charger with OCPPAuthorizationEnabled False (FreeVend)."""
     return Charger(
         charge_point_id="CP_FREE",
-        evses=[EVSE(evse_id=1, max_power_W=22000.0, voltage_V=230.0)],
+        evses=[EVSE(evse_id=1, max_power_W=22000.0)],
         config={
             "HeartbeatInterval": 120,
             "MeterValuesSampleInterval": 30,
             "OCPPAuthorizationEnabled": False,
-            "voltage_V": 230.0,
         },
     )
 

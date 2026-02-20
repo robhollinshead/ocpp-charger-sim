@@ -38,14 +38,14 @@ The following keys are known and can be read/updated via GetConfiguration and Ch
 | AuthorizeRemoteTxRequests | bool | Whether the charge point accepts RemoteStartTransaction. |
 | LocalAuthListEnabled | bool | Local auth list enabled flag. |
 | OCPPAuthorizationEnabled | bool | If true, simulator sends Authorize before StartTransaction and only starts on Accepted. |
-| voltage_V | float | EVSE voltage used for current/power calculations (e.g. 230.0). |
 
 - **GetConfiguration** with no keys returns all known keys present in config; with a list of keys returns those that are known and reports the rest in `unknown_key`.
-- **ChangeConfiguration** accepts integer keys (HeartbeatInterval, ConnectionTimeOut, MeterValuesSampleInterval, ClockAlignedDataInterval), boolean keys (AuthorizeRemoteTxRequests, LocalAuthListEnabled, OCPPAuthorizationEnabled), and `voltage_V` (float). Unknown key → NotSupported; invalid value → Rejected.
+- **ChangeConfiguration** accepts integer keys (HeartbeatInterval, ConnectionTimeOut, MeterValuesSampleInterval, ClockAlignedDataInterval) and boolean keys (AuthorizeRemoteTxRequests, LocalAuthListEnabled, OCPPAuthorizationEnabled). Unknown key → NotSupported; invalid value → Rejected.
 
 ## MeterValues
 
 - One **asyncio metering loop** per EVSE while it is in Charging state with an active transaction.
 - **Energy** increases monotonically; **power** comes from the CSMS via SetChargingProfile (or effective power from EVSE); **current** = power / voltage.
+- **Voltage** is dynamically computed from the current SoC using a sigmoid-based OCV (open-circuit voltage) model for a 108-cell DC pack.
 - Payload includes Energy.Active.Import.Register (Wh), Power.Active.Import (W), Current.Import (A), and SoC (Percent, location EV).
 - Interval is configurable via `MeterValuesSampleInterval` (default 30 seconds).

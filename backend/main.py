@@ -90,14 +90,13 @@ def _load_chargers_from_db() -> None:
         for row in rows:
             evse_rows = repo_list_evses_by_charger_id(db, row.id)
             if not evse_rows:
-                evses = [EVSE(evse_id=1, max_power_W=22000.0, voltage_V=230.0)]
+                evses = [EVSE(evse_id=1, max_power_W=22000.0)]
             else:
                 evses = [
-                    EVSE(evse_id=e.evse_id, max_power_W=22000.0, voltage_V=230.0)
+                    EVSE(evse_id=e.evse_id, max_power_W=22000.0)
                     for e in evse_rows
                 ]
             config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
-            config.setdefault("voltage_V", 230.0)
             sim = SimCharger(
                 charge_point_id=row.charge_point_id,
                 evses=evses,

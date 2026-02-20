@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
+from simulator_core.dc_voltage import DEFAULT_CELLS, get_pack_voltage_V
+
 
 class EvseState(str, Enum):
     """EVSE connector states per OCPP 1.6 StatusNotification."""
@@ -46,7 +48,6 @@ class EVSE:
         "state",
         "energy_Wh",
         "power_W",
-        "voltage_V",
         "current_A",
         "max_power_W",
         "offered_limit_W",
@@ -63,13 +64,11 @@ class EVSE:
         self,
         evse_id: int,
         max_power_W: float = 22000.0,  # not currently used as a hard limit; SetChargingProfile dictates power
-        voltage_V: float = 230.0,
     ) -> None:
         self.evse_id = evse_id
         self.state = EvseState.Available
         self.energy_Wh = 0.0
         self.power_W = 0.0
-        self.voltage_V = voltage_V
         self.current_A = 0.0
         self.max_power_W = max_power_W
         self.offered_limit_W = 0.0  # 0 until SetChargingProfile from CSMS
@@ -102,12 +101,16 @@ class EVSE:
         """Power for meter: CSMS limit from SetChargingProfile (no cap by max_power for simulation)."""
         return self.offered_limit_W
 
+    def get_voltage_V(self) -> float:
+        """Compute pack voltage from current SOC using sigmoid OCV model."""
+        return get_pack_voltage_V(self.soc_pct, DEFAULT_CELLS)
+
     def get_meter_snapshot(self) -> dict[str, float]:
         """Current meter values for MeterValues payload (FR-4)."""
         return {
             "energy_Wh": self.energy_Wh,
             "power_W": self.power_W,
-            "voltage_V": self.voltage_V,
+            "voltage_V": self.get_voltage_V(),
             "current_A": self.current_A,
         }
 
