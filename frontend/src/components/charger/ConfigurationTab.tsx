@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Save, RotateCcw, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { useUpdateChargerConfig } from '@/api/chargers';
+import { PowerTypeChip } from '@/components/PowerTypeChip';
 
 const EDITABLE_KEYS = [
   { key: 'HeartbeatInterval' as const, type: 'number' as const, label: 'HeartbeatInterval' },
@@ -87,6 +88,7 @@ export function ConfigurationTab({ charger }: ConfigurationTabProps) {
     { key: 'ChargePointVendor', value: charger.charge_point_vendor ?? 'FastCharge' },
     { key: 'ChargePointModel', value: charger.charge_point_model ?? 'Pro 150' },
     { key: 'FirmwareVersion', value: charger.firmware_version ?? '2.4.1' },
+    { key: 'PowerType', value: charger.power_type ?? 'DC' },
   ];
 
   return (
@@ -120,7 +122,11 @@ export function ConfigurationTab({ charger }: ConfigurationTabProps) {
                   <Lock className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="font-mono text-sm">{row.key}</span>
                 </div>
-                <span className="font-mono text-sm text-foreground">{row.value}</span>
+                {row.key === 'PowerType' ? (
+                  <PowerTypeChip powerType={row.value === 'AC' ? 'AC' : 'DC'} size="sm" />
+                ) : (
+                  <span className="font-mono text-sm text-foreground">{row.value}</span>
+                )}
               </div>
             ))}
           </CardContent>

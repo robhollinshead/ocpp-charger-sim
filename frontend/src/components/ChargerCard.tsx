@@ -2,9 +2,11 @@ import { Link } from 'react-router-dom';
 import { useConnectCharger, useDisconnectCharger } from '@/api/chargers';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { StatusBadge } from './StatusBadge';
+import { ConnectionBadge } from './ConnectionBadge';
+import { OcppStatusChip } from './OcppStatusChip';
+import { PowerTypeChip } from './PowerTypeChip';
 import { Plug, Link2, Link2Off } from 'lucide-react';
-import type { Charger, ChargerStatus } from '@/types/ocpp';
+import type { Charger } from '@/types/ocpp';
 
 interface ChargerCardProps {
   charger: Charger;
@@ -12,7 +14,6 @@ interface ChargerCardProps {
 }
 
 export function ChargerCard({ charger, locationId }: ChargerCardProps) {
-  const status: ChargerStatus = charger.connected ? 'Available' : 'Offline';
   const connectCharger = useConnectCharger(locationId);
   const disconnectCharger = useDisconnectCharger(locationId);
   const isConnecting = connectCharger.isPending && connectCharger.variables === charger.id;
@@ -41,17 +42,19 @@ export function ChargerCard({ charger, locationId }: ChargerCardProps) {
               </h3>
               <p className="text-sm text-muted-foreground font-mono">{charger.charge_point_id}</p>
             </div>
-            <StatusBadge status={status} />
+            <ConnectionBadge connected={charger.connected} />
           </div>
 
           <div className="space-y-2 mb-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <span className="font-mono text-xs bg-secondary px-2 py-0.5 rounded">
                 OCPP {charger.ocpp_version}
               </span>
               <span className="font-mono text-xs bg-secondary px-2 py-0.5 rounded">
                 {charger.evse_count} EVSE{charger.evse_count !== 1 ? 's' : ''}
               </span>
+              <PowerTypeChip powerType={charger.power_type === 'AC' ? 'AC' : 'DC'} size="sm" />
+              <OcppStatusChip status={charger.connected ? charger.ocpp_status ?? 'Available' : null} size="sm" />
             </div>
           </div>
 

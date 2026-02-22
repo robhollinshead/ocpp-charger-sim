@@ -92,8 +92,41 @@ def _hydrate_charger(db: Session, charge_point_id: str) -> SimCharger | None:
     return sim
 
 
-def _sim_charger_to_summary(c: SimCharger, location_id: str, connection_url: str, charger_name: str, ocpp_version: str, power_type: str = "DC") -> ChargerSummary:
+_EVSE_DISPLAY_PRIORITY = (
+    "Charging",
+    "Preparing",
+    "Finishing",
+    "Faulted",
+    "SuspendedEV",
+    "SuspendedEVSE",
+    "Unavailable",
+    "Available",
+)
+
+
+def _representative_ocpp_status(evse_states: list[str]) -> str | None:
+    """Return the highest-priority EVSE state for display (Charging > Preparing > ... > Available)."""
+    if not evse_states:
+        return None
+    def priority(s: str) -> int:
+        try:
+            return _EVSE_DISPLAY_PRIORITY.index(s)
+        except ValueError:
+            return len(_EVSE_DISPLAY_PRIORITY)
+    return min(evse_states, key=priority)
+
+
+def _sim_charger_to_summary(
+    c: SimCharger,
+    location_id: str,
+    connection_url: str,
+    charger_name: str,
+    ocpp_version: str,
+    power_type: str = "DC",
+) -> ChargerSummary:
     """Build ChargerSummary from simulator Charger and DB metadata."""
+    evse_states = [evse.state.value for evse in c.evses]
+    ocpp_status = _representative_ocpp_status(evse_states) if c.is_connected else None
     return ChargerSummary(
         id=c.charge_point_id,
         charge_point_id=c.charge_point_id,
@@ -104,6 +137,7 @@ def _sim_charger_to_summary(c: SimCharger, location_id: str, connection_url: str
         evse_count=len(c.evses),
         connected=c.is_connected,
         power_type=power_type if power_type in ("AC", "DC") else "DC",
+        ocpp_status=ocpp_status,
     )
 
 
@@ -187,6 +221,7 @@ def list_chargers_by_location(location_id: str, db: Session = Depends(get_db)) -
                     evse_count=0,
                     connected=False,
                     power_type=power_type,
+                    ocpp_status=None,
                 )
             )
     return result

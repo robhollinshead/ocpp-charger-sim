@@ -24,6 +24,8 @@ function mapResponseToCharger(r: ChargerResponse | ChargerDetailResponse): Charg
     location_id: r.location_id,
     evse_count: evseCount,
     connected: r.connected,
+    power_type: r.power_type,
+    ocpp_status: r.ocpp_status,
   };
 }
 

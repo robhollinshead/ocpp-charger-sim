@@ -107,6 +107,7 @@ class ChargerSummary(BaseModel):
     evse_count: int
     connected: bool = False
     power_type: PowerType = "DC"
+    ocpp_status: str | None = None  # Representative EVSE status when connected (e.g. Available, Charging)
 
 
 class ChargerDetail(BaseModel):

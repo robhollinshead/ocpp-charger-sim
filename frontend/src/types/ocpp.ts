@@ -30,6 +30,8 @@ export interface Charger {
   location_id: string;
   evse_count: number;
   connected: boolean;
+  power_type?: 'AC' | 'DC';
+  ocpp_status?: string | null;
 }
 
 /** Payload for creating a charger (API request). */
@@ -66,6 +68,8 @@ export interface ChargerResponse {
   location_id: string;
   evse_count: number;
   connected: boolean;
+  power_type?: 'AC' | 'DC';
+  ocpp_status?: string | null;
 }
 
 /** Evse status from API (snake_case). */
@@ -87,6 +91,7 @@ export interface ChargerDetailResponse extends ChargerResponse {
   config: Record<string, string | number | boolean>;
   security_profile?: 'none' | 'basic';
   basic_auth_password_set?: boolean;
+  power_type?: 'AC' | 'DC';
 }
 
 /** Payload for updating charger OCPP config (API request). */

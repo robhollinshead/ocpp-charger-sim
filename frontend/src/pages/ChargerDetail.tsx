@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useLocations } from '@/api/locations';
 import { useChargerDetail, useDeleteCharger, useConnectCharger, useDisconnectCharger } from '@/api/chargers';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
-import { StatusBadge } from '@/components/StatusBadge';
+import { ConnectionBadge } from '@/components/ConnectionBadge';
 import { ChargerDetailsEdit } from '@/components/ChargerDetailsEdit';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
@@ -24,7 +24,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Settings, FileText, Zap, Play, Plug, Trash2, Link2, Link2Off } from 'lucide-react';
 import { toast } from 'sonner';
-import type { ChargerStatus } from '@/types/ocpp';
 
 export default function ChargerDetail() {
   const { locationId, chargerId } = useParams();
@@ -84,8 +83,6 @@ export default function ChargerDetail() {
     );
   }
 
-  const status: ChargerStatus = charger.connected ? 'Available' : 'Offline';
-
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-6xl mx-auto p-6">
@@ -125,7 +122,7 @@ export default function ChargerDetail() {
             <div>
               <div className="flex items-center gap-3 mb-2">
                 <h1 className="text-2xl font-bold text-foreground">{charger.charger_name}</h1>
-                <StatusBadge status={status} />
+                <ConnectionBadge connected={charger.connected} />
               </div>
               <p className="text-muted-foreground font-mono text-sm">{charger.charge_point_id}</p>
             </div>

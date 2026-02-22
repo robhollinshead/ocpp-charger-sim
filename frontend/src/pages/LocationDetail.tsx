@@ -9,7 +9,7 @@ import { AddVehicleDialog } from '@/components/AddVehicleDialog';
 import { ImportChargersModal } from '@/components/ImportChargersModal';
 import { ImportVehiclesModal } from '@/components/ImportVehiclesModal';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
-import { StatusBadge } from '@/components/StatusBadge';
+import { ConnectionBadge } from '@/components/ConnectionBadge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -241,8 +241,8 @@ export default function LocationDetail() {
                       <p className="text-2xl font-bold">{connectedCount}</p>
                       <p className="text-sm text-muted-foreground">Connected</p>
                     </div>
-                    <StatusBadge
-                      status={connectedCount > 0 ? 'Available' : 'Offline'}
+                    <ConnectionBadge
+                      connected={connectedCount > 0}
                       size="sm"
                     />
                   </div>
