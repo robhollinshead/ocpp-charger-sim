@@ -387,8 +387,6 @@ The simulator is complete when:
 These may be added later but are **not** required for the initial implementation:
 
 - **Connection retries**: Add an optional cap on WebSocket connection retries (e.g. max N attempts or “give up after M minutes”) so that “Connect” does not retry indefinitely if the CSMS is permanently unavailable. For now, retries use exponential back-off with no cap.
-- **Authorize before StartTransaction**: Implemented. When config `OCPPAuthorizationEnabled` is True (default), the charger sends Authorize(idTag) to the CSMS and only proceeds to StartTransaction and charging if the CSMS returns Accepted. When False (FreeVend), the charger skips Authorize and uses StartTransaction only; the CSMS can still reject via StartTransaction. Local auth (e.g. local list) remains out of scope.
-- **Include SoC On Metering**: add vehicle info to make SoC updates realistic
 - **UI Updates on Websockets**: make the UI update based on websockets and not constant GET requests
 - OCPP 2.0.1 support
 - ISO-15118 vehicle integration
