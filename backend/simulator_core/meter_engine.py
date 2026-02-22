@@ -24,8 +24,8 @@ def build_meter_values_payload(evse: EVSE, power_type: str = "DC") -> MeterValue
         {"value": str(int(round(evse.power_W))), "measurand": "Power.Active.Import", "unit": "W"},
         {"value": f"{evse.current_A:.1f}", "measurand": "Current.Import", "unit": "A"},
     ]
-    # Only include SoC for DC chargers (AC chargers don't report battery SoC)
-    if power_type == "DC":
+    # Only include SoC for DC chargers (AC chargers don't report battery SoC). Use evse.power_type so AC is correct even if caller passed wrong power_type.
+    if evse.power_type == "DC":
         sampled_values.append(
             {"value": str(round(evse.soc_pct, 1)), "measurand": "SoC", "unit": "Percent", "location": "EV"}
         )

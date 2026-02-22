@@ -61,10 +61,13 @@ def _hydrate_charger(db: Session, charge_point_id: str) -> SimCharger | None:
     if row is None:
         return None
     sim = store_get_by_id(charge_point_id)
+    power_type = getattr(row, "power_type", "DC") or "DC"
     if sim is not None:
+        sim.power_type = power_type
+        for evse in sim.evses:
+            evse.power_type = power_type
         sim.set_vehicle_resolver(lambda id_tag: _resolve_vehicle_for_soc(id_tag))
         return sim
-    power_type = getattr(row, "power_type", "DC") or "DC"
     evse_rows = repo_list_evses_by_charger_id(db, row.id)
     if not evse_rows:
         evses = [EVSE(evse_id=1, max_power_W=22000.0, power_type=power_type)]

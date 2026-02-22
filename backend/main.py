@@ -88,12 +88,13 @@ def _load_chargers_from_db() -> None:
             seed_default()
             return
         for row in rows:
+            power_type = getattr(row, "power_type", "DC") or "DC"
             evse_rows = repo_list_evses_by_charger_id(db, row.id)
             if not evse_rows:
-                evses = [EVSE(evse_id=1, max_power_W=22000.0)]
+                evses = [EVSE(evse_id=1, max_power_W=22000.0, power_type=power_type)]
             else:
                 evses = [
-                    EVSE(evse_id=e.evse_id, max_power_W=22000.0)
+                    EVSE(evse_id=e.evse_id, max_power_W=22000.0, power_type=power_type)
                     for e in evse_rows
                 ]
             config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
@@ -108,6 +109,7 @@ def _load_chargers_from_db() -> None:
                 charge_point_vendor=row.charge_point_vendor or "FastCharge",
                 charge_point_model=row.charge_point_model or "Pro 150",
                 firmware_version=row.firmware_version or "2.4.1",
+                power_type=power_type,
             )
             store_add(sim)
     finally:
