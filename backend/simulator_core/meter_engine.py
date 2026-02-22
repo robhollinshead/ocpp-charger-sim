@@ -72,6 +72,7 @@ def update_evse_meter(evse: EVSE, dt_s: float) -> None:
 
 
 SendMeterValuesCb = Callable[[MeterValuesPayload], Awaitable[None]]
+OnSocFullCb = Callable[[], Awaitable[None]]
 
 
 async def _metering_loop(
@@ -80,15 +81,28 @@ async def _metering_loop(
     interval_s: float,
     stop_event: asyncio.Event,
     power_type: str = "DC",
+    on_soc_full: OnSocFullCb | None = None,
 ) -> None:
     """
-    Single EVSE metering loop. Runs only while Charging and transaction active.
-    Stops when stop_event is set or state is no longer Charging.
+    Single EVSE metering loop. Runs while Charging or SuspendedEV and transaction active.
+    Stops when stop_event is set or state is neither Charging nor SuspendedEV.
+    When SoC reaches 100% and state is Charging, calls on_soc_full once (transition to SuspendedEV);
+    loop continues with 0 effective power.
     """
-    while not stop_event.is_set() and evse.state == EvseState.Charging and evse.transaction_id is not None:
+    while (
+        not stop_event.is_set()
+        and evse.state in (EvseState.Charging, EvseState.SuspendedEV)
+        and evse.transaction_id is not None
+    ):
         update_evse_meter(evse, interval_s)
         payload = build_meter_values_payload(evse, power_type)
         await send_cb(payload)
+        if (
+            evse.soc_pct >= 100.0
+            and evse.state == EvseState.Charging
+            and on_soc_full is not None
+        ):
+            await on_soc_full()
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval_s)
         except asyncio.TimeoutError:
@@ -100,11 +114,15 @@ def start_metering_loop(
     send_cb: SendMeterValuesCb,
     interval_s: float = 10.0,
     power_type: str = "DC",
+    on_soc_full: OnSocFullCb | None = None,
 ) -> tuple[asyncio.Task, asyncio.Event]:
     """
     Start one asyncio task per EVSE (FR-1). Callback receives OCPP-shaped payload.
     Returns (task, stop_event). Cancel by setting stop_event or cancelling the task.
+    Optional on_soc_full is called once when SoC reaches 100% while Charging (e.g. to transition to SuspendedEV).
     """
     stop_event = asyncio.Event()
-    task = asyncio.create_task(_metering_loop(evse, send_cb, interval_s, stop_event, power_type))
+    task = asyncio.create_task(
+        _metering_loop(evse, send_cb, interval_s, stop_event, power_type, on_soc_full)
+    )
     return task, stop_event

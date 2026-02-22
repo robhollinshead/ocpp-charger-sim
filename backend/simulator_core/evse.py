@@ -106,7 +106,11 @@ class EVSE:
         self.offered_limit_W = max(0.0, limit_W)
 
     def get_effective_power_W(self) -> float:
-        """Power for meter: CSMS limit from SetChargingProfile (no cap by max_power for simulation)."""
+        """Power for meter: CSMS limit from SetChargingProfile (no cap by max_power for simulation).
+        Returns 0 when suspended (SuspendedEV/SuspendedEVSE) so no power is simulated regardless of profile.
+        """
+        if self.state in (EvseState.SuspendedEV, EvseState.SuspendedEVSE):
+            return 0.0
         return self.offered_limit_W
 
     def get_voltage_V(self) -> float:

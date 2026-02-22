@@ -158,6 +158,30 @@ def test_update_evse_meter_dc_voltage_varies_with_soc():
     assert voltage_high > voltage_low  # Higher SoC = higher voltage
 
 
+def test_get_effective_power_w_zero_when_suspended_ev():
+    """get_effective_power_W returns 0 when state is SuspendedEV even if offered_limit_W > 0."""
+    evse = EVSE(evse_id=1)
+    evse.state = EvseState.SuspendedEV
+    evse.offered_limit_W = 11000.0
+    assert evse.get_effective_power_W() == 0.0
+
+
+def test_get_effective_power_w_zero_when_suspended_evse():
+    """get_effective_power_W returns 0 when state is SuspendedEVSE even if offered_limit_W > 0."""
+    evse = EVSE(evse_id=1)
+    evse.state = EvseState.SuspendedEVSE
+    evse.offered_limit_W = 11000.0
+    assert evse.get_effective_power_W() == 0.0
+
+
+def test_get_effective_power_w_returns_offered_when_charging():
+    """get_effective_power_W returns offered_limit_W when state is Charging."""
+    evse = EVSE(evse_id=1)
+    evse.state = EvseState.Charging
+    evse.offered_limit_W = 11000.0
+    assert evse.get_effective_power_W() == 11000.0
+
+
 def test_evse_ac_power_conversion():
     """Test AC power/current conversion methods on EVSE."""
     evse = EVSE(evse_id=1, power_type="AC")
@@ -190,3 +214,76 @@ async def test_start_metering_loop_ac_excludes_soc():
     sampled = received[0]["meterValue"][0]["sampledValue"]
     measurands = {s["measurand"] for s in sampled}
     assert "SoC" not in measurands
+
+
+def _power_from_payload(payload):
+    """Extract Power.Active.Import value (string) from meter payload."""
+    for s in payload["meterValue"][0]["sampledValue"]:
+        if s.get("measurand") == "Power.Active.Import":
+            return s["value"]
+    return None
+
+
+@pytest.mark.asyncio
+async def test_start_metering_loop_calls_on_soc_full_once_and_continues_with_zero_power():
+    """When SoC reaches 100%, on_soc_full is called once; loop continues and later payloads have 0 power."""
+    evse = EVSE(evse_id=1, power_type="DC")
+    evse.state = EvseState.Charging
+    evse.transaction_id = 1
+    evse._initial_energy_Wh = 990.0
+    evse.energy_Wh = 990.0
+    evse.start_soc_pct = 99.0
+    evse.battery_capacity_Wh = 1000.0
+    evse.offered_limit_W = 40000.0  # one 1s tick adds ~11.1 Wh -> 100% SoC
+    received = []
+    on_soc_full_called = []
+
+    async def send_cb(payload):
+        received.append(payload)
+
+    async def on_soc_full():
+        on_soc_full_called.append(1)
+        evse.transition_to(EvseState.SuspendedEV)
+
+    task, stop_event = start_metering_loop(
+        evse, send_cb, interval_s=1.0, power_type="DC", on_soc_full=on_soc_full
+    )
+    await asyncio.sleep(3.5)  # allow a few ticks: first hits 100% and calls on_soc_full, then more with 0 power
+    stop_event.set()
+    await asyncio.wait_for(task, timeout=2.0)
+    assert len(on_soc_full_called) == 1
+    assert evse.state == EvseState.SuspendedEV
+    assert len(received) >= 2
+    # Later payloads should have 0 power (loop continued after transition)
+    later_powers = [_power_from_payload(p) for p in received[1:]]
+    assert all(p == "0" for p in later_powers)
+
+
+@pytest.mark.asyncio
+async def test_start_metering_loop_without_on_soc_full_continues_at_100_soc():
+    """Without on_soc_full, loop keeps running at 100% SoC and does not transition state."""
+    evse = EVSE(evse_id=1, power_type="DC")
+    evse.state = EvseState.Charging
+    evse.transaction_id = 1
+    evse._initial_energy_Wh = 990.0
+    evse.energy_Wh = 990.0
+    evse.start_soc_pct = 99.0
+    evse.battery_capacity_Wh = 1000.0
+    evse.offered_limit_W = 40000.0
+    received = []
+
+    async def send_cb(payload):
+        received.append(payload)
+
+    task, stop_event = start_metering_loop(evse, send_cb, interval_s=1.0, power_type="DC")
+    await asyncio.sleep(2.5)
+    stop_event.set()
+    await asyncio.wait_for(task, timeout=2.0)
+    assert evse.state == EvseState.Charging
+    assert len(received) >= 2
+    # All payloads should show 100% SoC (SoC in payload for DC)
+    for p in received:
+        for s in p["meterValue"][0]["sampledValue"]:
+            if s.get("measurand") == "SoC":
+                assert s["value"] in ("100", "100.0")
+                break

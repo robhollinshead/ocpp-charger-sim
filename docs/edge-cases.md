@@ -19,6 +19,12 @@ The EVSE state machine enforces valid OCPP 1.6 transitions. Invalid transitions 
 
 Example: going from Available directly to Charging is not allowed; the simulator must transition via Preparing.
 
+## SuspendedEV at 100% SoC
+
+- The simulator tracks **SoC** for every charging session (AC and DC). When the simulated vehicle reaches **100% SoC**, the EVSE automatically transitions from **Charging** to **SuspendedEV** and sends **StatusNotification(SuspendedEV)** to the CSMS so it can re-allocate power.
+- The **meter loop does not stop**: MeterValues continue to be sent at the configured interval, but **effective power is 0** (energy and power in the payload no longer increase). SoC remains at 100% until the session is stopped.
+- If the CSMS sends **SetChargingProfile** while the EVSE is in SuspendedEV (or SuspendedEVSE), the limit is stored but **effective power stays 0** until the EVSE returns to Charging (e.g. after a future resume flow) or the transaction is stopped.
+
 ## Authorize and StartTransaction
 
 - **OCPPAuthorizationEnabled true:** Simulator sends Authorize first. If the CSMS returns non-Accepted or the call fails (e.g. CallError or empty response), the EVSE is reverted to **Available**, a StatusNotification is sent, and **no** StartTransaction is sent.

@@ -7,11 +7,11 @@ The simulator implements **OCPP 1.6J** as a charge point. This document lists th
 | Action | When |
 |--------|------|
 | **BootNotification** | On WebSocket connect; includes charge_point_vendor, charge_point_model, firmware_version from charger. |
-| **StatusNotification** | On every EVSE state change (e.g. Available, Preparing, Charging, Finishing, Faulted). |
+| **StatusNotification** | On every EVSE state change (e.g. Available, Preparing, Charging, SuspendedEV, Finishing, Faulted). When the simulated vehicle reaches 100% SoC, the EVSE transitions to **SuspendedEV** and a StatusNotification is sent so the CSMS can re-allocate power. |
 | **Authorize** | Before StartTransaction when `OCPPAuthorizationEnabled` is true; otherwise skipped (free vend). |
 | **StartTransaction** | When starting a charging session (connectorId, idTag, meter start, timestamp). |
 | **StopTransaction** | When stopping a session (meter stop, transactionId, reason, timestamp). |
-| **MeterValues** | Periodically per EVSE while charging; interval from `MeterValuesSampleInterval`. |
+| **MeterValues** | Periodically per EVSE while Charging or SuspendedEV (active transaction); interval from `MeterValuesSampleInterval`. Continues after transition to SuspendedEV (at 100% SoC) with 0 power until the session is stopped. |
 | **Heartbeat** | Periodically; interval from `HeartbeatInterval`. |
 
 ## Incoming messages (CSMS → charger)
@@ -44,8 +44,9 @@ The following keys are known and can be read/updated via GetConfiguration and Ch
 
 ## MeterValues
 
-- One **asyncio metering loop** per EVSE while it is in Charging state with an active transaction.
-- **Energy** increases monotonically; **power** comes from the CSMS via SetChargingProfile (or effective power from EVSE); **current** = power / voltage.
+- One **asyncio metering loop** per EVSE while it is in **Charging** or **SuspendedEV** state with an active transaction. The loop keeps running after the EVSE transitions to SuspendedEV so the CSMS continues to receive MeterValues (with 0 power) until the session is stopped.
+- **Energy** increases monotonically while charging; **power** comes from the CSMS via SetChargingProfile (effective power from EVSE). When the EVSE is in **SuspendedEV** or **SuspendedEVSE**, effective power is **0** regardless of SetChargingProfile, so no further energy is simulated.
+- **SoC** is always calculated internally (for both AC and DC). When SoC reaches **100%**, the simulator transitions the EVSE to **SuspendedEV**, sends StatusNotification(SuspendedEV), and effective power becomes 0; the meter loop continues.
 - **Voltage** is dynamically computed from the current SoC using a sigmoid-based OCV (open-circuit voltage) model for a 108-cell DC pack.
-- Payload includes Energy.Active.Import.Register (Wh), Power.Active.Import (W), Current.Import (A), and SoC (Percent, location EV).
+- Payload includes Energy.Active.Import.Register (Wh), Power.Active.Import (W), Current.Import (A). **DC chargers** also include SoC (Percent, location EV); **AC chargers** do not send SoC in MeterValues (per typical real AC behaviour) but still track it internally for the 100% → SuspendedEV transition.
 - Interval is configurable via `MeterValuesSampleInterval` (default 30 seconds).

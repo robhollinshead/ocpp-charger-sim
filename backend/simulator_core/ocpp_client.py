@@ -494,9 +494,15 @@ class SimulatorChargePoint(ChargePoint):
             ocpp_payload = _dict_to_meter_values_payload(payload)
             await self.call(ocpp_payload)
 
+        async def on_soc_full() -> None:
+            evse.transition_to(EvseState.SuspendedEV)
+            await self.send_status_notification(connector_id, EvseState.SuspendedEV)
+
         interval_s = self._charger.get_meter_interval_s()
         power_type = getattr(self._charger, "power_type", "DC")
-        task, stop_event = start_metering_loop(evse, send_meter_values, interval_s, power_type)
+        task, stop_event = start_metering_loop(
+            evse, send_meter_values, interval_s, power_type, on_soc_full=on_soc_full
+        )
         self._meter_tasks[connector_id] = (task, stop_event)
         return resp.transaction_id
 

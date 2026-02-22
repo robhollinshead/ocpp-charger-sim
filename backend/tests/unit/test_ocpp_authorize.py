@@ -201,3 +201,71 @@ async def test_authorize_disabled_start_invalid_reverts_to_available(charge_poin
     assert evse.transaction_id is None
     assert evse.state == EvseState.Available
     mock_meter.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_soc_full_transitions_to_suspended_ev_and_meter_values_continue(mock_connection):
+    """When SoC reaches 100%, on_soc_full is passed to start_metering_loop; invoking it transitions to SuspendedEV and sends StatusNotification."""
+    charger = Charger(
+        charge_point_id="CP_SOC",
+        evses=[EVSE(evse_id=1, max_power_W=22000.0)],
+        config={
+            "HeartbeatInterval": 120,
+            "MeterValuesSampleInterval": 30,
+            "OCPPAuthorizationEnabled": False,
+        },
+    )
+    cp = SimulatorChargePoint("CP_SOC", mock_connection)
+    cp.set_charger(charger)
+
+    status_resp = call_result.StatusNotificationPayload()
+    responses = [
+        status_resp,
+        _start_resp(transaction_id=313, accepted=True),
+        status_resp,
+    ]
+    call_responses = iter(responses)
+    captured_on_soc_full = []
+
+    async def mock_call(req):
+        return next(call_responses)
+
+    def capture_metering_loop(evse, send_cb, interval_s, power_type, on_soc_full=None):
+        captured_on_soc_full.append(on_soc_full)
+        meter_task = asyncio.create_task(_dummy_meter_task())
+        return (meter_task, asyncio.Event())
+
+    with patch.object(cp, "call", side_effect=mock_call), patch(
+        "simulator_core.ocpp_client.start_metering_loop", side_effect=capture_metering_loop
+    ):
+        result = await cp.start_transaction(
+            connector_id=1,
+            id_tag="TAG1",
+            start_soc_pct=99.0,
+            battery_capacity_kwh=0.015,
+        )
+    assert result == 313
+    assert len(captured_on_soc_full) == 1
+    on_soc_full = captured_on_soc_full[0]
+    assert on_soc_full is not None
+
+    status_sent = []
+
+    async def record_status(connector_id, status):
+        status_sent.append((connector_id, status))
+
+    with patch.object(cp, "send_status_notification", side_effect=record_status):
+        await on_soc_full()
+
+    evse = cp._charger.get_evse(1)
+    assert evse.state == EvseState.SuspendedEV
+    assert (1, EvseState.SuspendedEV) in status_sent
+
+    # Clean up dummy meter task so it does not stay pending
+    meter_task, _ = cp._meter_tasks.get(1, (None, None))
+    if meter_task is not None:
+        meter_task.cancel()
+        try:
+            await meter_task
+        except asyncio.CancelledError:
+            pass
