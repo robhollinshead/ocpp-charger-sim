@@ -139,3 +139,34 @@ class OCPPLogEntry(BaseModel):
     messageType: str
     payload: str
     status: str = "success"
+
+
+# ChargePointErrorCode values permitted when injecting a Faulted status.
+# NoError is intentionally excluded — it is not valid for a Faulted notification.
+FAULTED_ERROR_CODES: frozenset[str] = frozenset({
+    "ConnectorLockFailure",
+    "EVCommunicationError",
+    "GroundFailure",
+    "HighTemperature",
+    "InternalError",
+    "LocalListConflict",
+    "OtherError",
+    "OverCurrentFailure",
+    "OverVoltage",
+    "PowerMeterFailure",
+    "PowerSwitchFailure",
+    "ReaderFailure",
+    "ResetFailure",
+    "UnderVoltage",
+    "WeakSignal",
+})
+
+
+class InjectStatusRequest(BaseModel):
+    """Request body for POST /chargers/{id}/inject_status."""
+
+    connector_id: int
+    status: str  # EvseState value; validated against state machine in the endpoint
+    error_code: str | None = None  # Required (and must not be NoError) when status == "Faulted"
+    info: str | None = None  # Optional free-text diagnostic info
+    vendor_error_code: str | None = None  # Optional vendor-specific error code
