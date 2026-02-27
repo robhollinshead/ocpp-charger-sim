@@ -3,8 +3,7 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
-
-LOG = logging.getLogger(__name__)
+from ocpp.v16.enums import ChargePointErrorCode
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -38,9 +37,11 @@ from schemas.chargers import (
     StopTransactionRequest,
 )
 from simulator_core.charger import Charger as SimCharger
-from simulator_core.evse import EVSE
+from simulator_core.evse import EVSE, EvseState
 from simulator_core.ocpp_client import build_connection_url, connect_charge_point
 from simulator_core.store import add as store_add, get_by_id as store_get_by_id, remove as store_remove
+
+LOG = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chargers"])
 
@@ -586,9 +587,6 @@ async def inject_status(
     db: Session = Depends(get_db),
 ) -> None:
     """Inject a StatusNotification: validate the state transition, update EVSE state, and send via OCPP WebSocket."""
-    from ocpp.v16.enums import ChargePointErrorCode
-    from simulator_core.evse import EvseState
-
     sim = _hydrate_charger(db, charge_point_id)
     if sim is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")

@@ -70,19 +70,21 @@ export function InjectStatusPanel({ chargePointId, charger }: InjectStatusPanelP
   const validStatuses = VALID_TRANSITIONS[currentState] ?? [];
   const isFaulted = selectedStatus === 'Faulted';
 
-  function handleEvseChange(value: string) {
-    setSelectedEvseId(Number(value));
-    setSelectedStatus('');
+  function resetFaultFields() {
     setErrorCode('');
     setInfo('');
     setVendorErrorCode('');
   }
 
+  function handleEvseChange(value: string) {
+    setSelectedEvseId(Number(value));
+    setSelectedStatus('');
+    resetFaultFields();
+  }
+
   function handleStatusChange(value: string) {
     setSelectedStatus(value);
-    setErrorCode('');
-    setInfo('');
-    setVendorErrorCode('');
+    resetFaultFields();
   }
 
   function handleSubmit() {
@@ -99,8 +101,8 @@ export function InjectStatusPanel({ chargePointId, charger }: InjectStatusPanelP
         connector_id: selectedEvseId,
         status: selectedStatus,
         error_code: isFaulted ? errorCode : undefined,
-        info: isFaulted && info ? info : undefined,
-        vendor_error_code: isFaulted && vendorErrorCode ? vendorErrorCode : undefined,
+        info: isFaulted ? info || undefined : undefined,
+        vendor_error_code: isFaulted ? vendorErrorCode || undefined : undefined,
       },
       {
         onSuccess: () => toast.success('Status injected successfully'),
