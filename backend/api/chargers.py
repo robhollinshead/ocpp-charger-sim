@@ -3,8 +3,7 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
-
-LOG = logging.getLogger(__name__)
+from ocpp.v16.enums import ChargePointErrorCode
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -29,6 +28,8 @@ from schemas.chargers import (
     ChargerUpdate,
     DEFAULT_CHARGER_CONFIG,
     EvseStatus,
+    FAULTED_ERROR_CODES,
+    InjectStatusRequest,
     MeterSnapshot,
     OCPPLogEntry,
     StartTransactionRequest,
@@ -36,9 +37,11 @@ from schemas.chargers import (
     StopTransactionRequest,
 )
 from simulator_core.charger import Charger as SimCharger
-from simulator_core.evse import EVSE
+from simulator_core.evse import EVSE, EvseState
 from simulator_core.ocpp_client import build_connection_url, connect_charge_point
 from simulator_core.store import add as store_add, get_by_id as store_get_by_id, remove as store_remove
+
+LOG = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chargers"])
 
@@ -575,3 +578,72 @@ def delete_charger(charge_point_id: str, db: Session = Depends(get_db)) -> None:
     if not repo_delete_charger(db, charge_point_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
     store_remove(charge_point_id)
+
+
+@router.post("/chargers/{charge_point_id}/inject_status", status_code=status.HTTP_204_NO_CONTENT)
+async def inject_status(
+    charge_point_id: str,
+    body: InjectStatusRequest,
+    db: Session = Depends(get_db),
+) -> None:
+    """Inject a StatusNotification: validate the state transition, update EVSE state, and send via OCPP WebSocket."""
+    sim = _hydrate_charger(db, charge_point_id)
+    if sim is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
+    if not sim.is_connected:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Charger not connected to CSMS",
+        )
+    client = getattr(sim, "_ocpp_client", None)
+    if client is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Charger not connected to CSMS",
+        )
+
+    evse = sim.get_evse(body.connector_id)
+    if evse is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"EVSE {body.connector_id} not found on this charger",
+        )
+
+    try:
+        new_state = EvseState(body.status)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown status: {body.status!r}",
+        )
+
+    if not evse.can_transition_to(new_state):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid transition from {evse.state.value!r} to {new_state.value!r}",
+        )
+
+    ocpp_error_code: ChargePointErrorCode | None = None
+    if new_state == EvseState.Faulted:
+        if not body.error_code or body.error_code not in FAULTED_ERROR_CODES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="error_code is required for Faulted status and must not be 'NoError'",
+            )
+        ocpp_error_code = ChargePointErrorCode(body.error_code)
+
+    evse.transition_to(new_state)
+    try:
+        await client.send_status_notification(
+            body.connector_id,
+            new_state,
+            error_code=ocpp_error_code,
+            info=body.info,
+            vendor_error_code=body.vendor_error_code,
+        )
+    except Exception as e:
+        LOG.exception("inject_status: send_status_notification failed for %s connector %d", charge_point_id, body.connector_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e

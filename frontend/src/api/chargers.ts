@@ -262,6 +262,41 @@ export function useClearChargerLogs(chargePointId: string | undefined) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Inject Status
+// ---------------------------------------------------------------------------
+
+export interface InjectStatusPayload {
+  connector_id: number;
+  status: string;
+  error_code?: string;
+  info?: string;
+  vendor_error_code?: string;
+}
+
+async function injectStatus(chargePointId: string, payload: InjectStatusPayload): Promise<void> {
+  await apiFetch(`${API_PREFIX}/chargers/${chargePointId}/inject_status`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function useInjectStatus(chargePointId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: InjectStatusPayload) => injectStatus(chargePointId!, payload),
+    onSuccess: () => {
+      if (chargePointId) {
+        queryClient.invalidateQueries({ queryKey: ['chargers', 'detail', chargePointId] });
+        queryClient.invalidateQueries({ queryKey: chargerLogsQueryKey(chargePointId) });
+      }
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || 'Failed to inject status');
+    },
+  });
+}
+
 export function useStartTransaction(chargePointId: string | undefined, locationId: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({

@@ -228,7 +228,7 @@ export default function ChargerDetail() {
             <ConfigurationTab charger={charger} />
           </TabsContent>
           <TabsContent value="logs">
-            <LogsTab chargePointId={chargerId} />
+            <LogsTab chargePointId={chargerId} charger={charger} />
           </TabsContent>
           <TabsContent value="transactions">
             <TransactionsTab chargePointId={charger.id} locationId={locationId!} />

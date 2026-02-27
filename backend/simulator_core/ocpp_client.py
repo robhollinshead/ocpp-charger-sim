@@ -205,15 +205,33 @@ class SimulatorChargePoint(ChargePoint):
         )
         return await self.call(req)
 
-    async def send_status_notification(self, connector_id: int, status: EvseState) -> None:
-        """Send StatusNotification for EVSE state change."""
+    async def send_status_notification(
+        self,
+        connector_id: int,
+        status: EvseState,
+        *,
+        error_code: Optional[ChargePointErrorCode] = None,
+        info: Optional[str] = None,
+        vendor_error_code: Optional[str] = None,
+    ) -> None:
+        """Send StatusNotification for EVSE state change.
+
+        Args:
+            connector_id: The connector/EVSE id.
+            status: The new EVSE state.
+            error_code: ChargePointErrorCode enum value; defaults to no_error.
+            info: Optional free-text diagnostic info (for Faulted status).
+            vendor_error_code: Optional vendor-specific error code string.
+        """
         ocpp_status = _EVSE_STATE_TO_OCPP.get(status, ChargePointStatus.available)
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
         req = call.StatusNotificationPayload(
             connector_id=connector_id,
-            error_code=ChargePointErrorCode.no_error,
+            error_code=error_code if error_code is not None else ChargePointErrorCode.no_error,
             status=ocpp_status,
             timestamp=now,
+            info=info,
+            vendor_error_code=vendor_error_code,
         )
         await self.call(req)
 

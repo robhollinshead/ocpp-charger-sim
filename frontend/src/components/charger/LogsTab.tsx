@@ -6,14 +6,17 @@ import { Badge } from '@/components/ui/badge';
 import { Search, Trash2, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { InjectStatusPanel } from './InjectStatusPanel';
+import type { ChargerDetailResponse } from '@/types/ocpp';
 
-const LOGS_POLL_INTERVAL_MS = 2000;
+const LOGS_POLL_INTERVAL_MS = 5000;
 
 interface LogsTabProps {
   chargePointId: string | undefined;
+  charger?: ChargerDetailResponse;
 }
 
-export function LogsTab({ chargePointId }: LogsTabProps) {
+export function LogsTab({ chargePointId, charger }: LogsTabProps) {
   const [filter, setFilter] = useState('');
   const { data: logs = [], isLoading } = useChargerLogs(chargePointId, LOGS_POLL_INTERVAL_MS);
   const clearLogs = useClearChargerLogs(chargePointId);
@@ -28,6 +31,10 @@ export function LogsTab({ chargePointId }: LogsTabProps) {
 
   return (
     <div className="space-y-4">
+      {charger && chargePointId && (
+        <InjectStatusPanel chargePointId={chargePointId} charger={charger} />
+      )}
+
       <div className="flex items-center justify-between gap-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
