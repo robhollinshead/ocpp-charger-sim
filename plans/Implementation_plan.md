@@ -392,5 +392,3 @@ These may be added later but are **not** required for the initial implementation
 - ISO-15118 vehicle integration
 - DC fast-charging taper curves
 - Dynamic scenario editor in UI
-- Hardware-in-the-loop mode
-- Distributed simulation clusters

@@ -20,6 +20,7 @@ from api.chargers import router as chargers_router
 from api.locations import router as locations_router
 from api.routes import router
 from api.import_api import router as import_router
+from api.scenarios import router as scenarios_router
 from api.vehicles import router as vehicles_router
 from repositories.charger_repository import (
     list_all_chargers as repo_list_all_chargers,
@@ -52,6 +53,7 @@ app.include_router(locations_router, prefix="/api")
 app.include_router(chargers_router, prefix="/api")
 app.include_router(vehicles_router, prefix="/api")
 app.include_router(import_router, prefix="/api")
+app.include_router(scenarios_router, prefix="/api")
 
 
 @app.get("/api/health", response_model=HealthResponse)
