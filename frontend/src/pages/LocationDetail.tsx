@@ -34,6 +34,7 @@ import {
 import { MapPin, Zap, Play, Trash2, Plus, Link2, Link2Off, Car, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Vehicle } from '@/types/ocpp';
+import { ScenariosTab } from '@/components/location/ScenariosTab';
 
 export default function LocationDetail() {
   const { locationId } = useParams();
@@ -111,10 +112,6 @@ export default function LocationDetail() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button>
-                <Play className="h-4 w-4 mr-1" />
-                Run Scenario
-              </Button>
               <Button
                 variant="outline"
                 className="text-destructive hover:bg-destructive/10 hover:text-destructive"
@@ -216,6 +213,10 @@ export default function LocationDetail() {
             <TabsTrigger value="vehicles" className="gap-2">
               <Car className="h-4 w-4" />
               Vehicles
+            </TabsTrigger>
+            <TabsTrigger value="scenarios" className="gap-2">
+              <Play className="h-4 w-4" />
+              Scenarios
             </TabsTrigger>
           </TabsList>
 
@@ -355,6 +356,10 @@ export default function LocationDetail() {
                 </TableBody>
               </Table>
             )}
+          </TabsContent>
+
+          <TabsContent value="scenarios" className="space-y-4">
+            <ScenariosTab locationId={locationId} />
           </TabsContent>
         </Tabs>
       </div>

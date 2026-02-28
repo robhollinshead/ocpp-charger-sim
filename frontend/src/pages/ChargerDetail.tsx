@@ -10,7 +10,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ConfigurationTab } from '@/components/charger/ConfigurationTab';
 import { LogsTab } from '@/components/charger/LogsTab';
 import { TransactionsTab } from '@/components/charger/TransactionsTab';
-import { ScenariosTab } from '@/components/charger/ScenariosTab';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +21,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Settings, FileText, Zap, Play, Plug, Trash2, Link2, Link2Off } from 'lucide-react';
+import { Settings, FileText, Zap, Plug, Trash2, Link2, Link2Off } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function ChargerDetail() {
@@ -214,13 +213,6 @@ export default function ChargerDetail() {
               <Zap className="h-4 w-4" />
               Transactions
             </TabsTrigger>
-            <TabsTrigger
-              value="scenarios"
-              className="data-[state=active]:bg-card data-[state=active]:text-foreground gap-2"
-            >
-              <Play className="h-4 w-4" />
-              Scenarios
-            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="config" className="space-y-6">
@@ -232,9 +224,6 @@ export default function ChargerDetail() {
           </TabsContent>
           <TabsContent value="transactions">
             <TransactionsTab chargePointId={charger.id} locationId={locationId!} />
-          </TabsContent>
-          <TabsContent value="scenarios">
-            <ScenariosTab />
           </TabsContent>
         </Tabs>
       </div>
