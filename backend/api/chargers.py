@@ -35,6 +35,9 @@ from schemas.chargers import (
     StartTransactionRequest,
     StartTransactionResponse,
     StopTransactionRequest,
+    SUPPORTED_MEASURANDS_COMMON,
+    SUPPORTED_MEASURANDS_DC_ONLY,
+    SUPPORTED_MEASURANDS_AC_PHASE,
 )
 from simulator_core.charger import Charger as SimCharger
 from simulator_core.evse import EVSE, EvseState
@@ -44,6 +47,22 @@ from simulator_core.store import add as store_add, get_by_id as store_get_by_id,
 LOG = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chargers"])
+
+
+def _validate_meter_measurands(measurands_str: str, power_type: str) -> str | None:
+    """Validate MeterValuesSampledData value for the given power_type.
+    Returns an error message string if invalid, or None if valid.
+    """
+    allowed = SUPPORTED_MEASURANDS_COMMON | (
+        SUPPORTED_MEASURANDS_DC_ONLY if power_type == "DC" else SUPPORTED_MEASURANDS_AC_PHASE
+    )
+    tokens = [m.strip() for m in measurands_str.split(",") if m.strip()]
+    if not tokens:
+        return "MeterValuesSampledData must contain at least one measurand"
+    invalid = [m for m in tokens if m not in allowed]
+    if invalid:
+        return f"Unsupported measurands for {power_type} charger: {', '.join(invalid)}"
+    return None
 
 
 def _resolve_vehicle_for_soc(id_tag: str) -> tuple[float, float] | None:
@@ -469,6 +488,18 @@ def update_charger_config(
 ) -> ChargerDetail:
     """Update charger OCPP config. Merges provided keys into stored config."""
     updates = body.model_dump(exclude_unset=True)
+    if "MeterValuesSampledData" in updates:
+        sim_check = store_get_by_id(charge_point_id)
+        if sim_check is not None:
+            power_type = sim_check.power_type or "DC"
+        else:
+            row = repo_get_charger(db, charge_point_id)
+            if row is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
+            power_type = getattr(row, "power_type", "DC") or "DC"
+        err = _validate_meter_measurands(updates["MeterValuesSampledData"], power_type)
+        if err:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=err)
     if not updates:
         # No changes; return current detail.
         sim = _hydrate_charger(db, charge_point_id)

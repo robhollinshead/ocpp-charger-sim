@@ -11,24 +11,49 @@ if TYPE_CHECKING:
 # OCPP 1.6 MeterValues payload shape for the callback (connectorId, transactionId, meterValue)
 MeterValuesPayload = dict
 
+# Phase-level AC measurand token → (wire measurand, phase, unit).
+# Voltage and current for all phases are simplified: same value as the aggregate.
+_PHASE_MEASURAND_MAP: dict[str, tuple[str, str, str]] = {
+    "Current.Import.L1": ("Current.Import", "L1", "A"),
+    "Current.Import.L2": ("Current.Import", "L2", "A"),
+    "Current.Import.L3": ("Current.Import", "L3", "A"),
+    "Voltage.L1-N":      ("Voltage", "L1-N", "V"),
+    "Voltage.L2-N":      ("Voltage", "L2-N", "V"),
+    "Voltage.L3-N":      ("Voltage", "L3-N", "V"),
+}
 
-def build_meter_values_payload(evse: EVSE, power_type: str = "DC") -> MeterValuesPayload:
-    """Build OCPP 1.6 MeterValues request payload (FR-4).
+# Fixed line-to-neutral voltage for AC phase measurands (V).
+_AC_PHASE_VOLTAGE_V = 230
 
-    For AC chargers, SoC is excluded from the payload (not reported by real AC chargers).
-    SoC is still calculated internally for session end detection.
+
+def _build_sampled_value(token: str, evse: EVSE) -> dict | None:
+    """Return a single OCPP sampledValue dict for the given measurand token, or None if unknown."""
+    if token == "Energy.Active.Import.Register":
+        return {"value": str(int(round(evse.energy_Wh))), "measurand": token, "unit": "Wh"}
+    if token == "Power.Active.Import":
+        return {"value": str(int(round(evse.power_W))), "measurand": token, "unit": "W"}
+    if token == "Current.Import":
+        return {"value": f"{evse.current_A:.1f}", "measurand": token, "unit": "A"}
+    if token == "SoC":
+        return {"value": str(round(evse.soc_pct, 1)), "measurand": token, "unit": "Percent", "location": "EV"}
+    if token in _PHASE_MEASURAND_MAP:
+        wire_measurand, phase, unit = _PHASE_MEASURAND_MAP[token]
+        if unit == "A":
+            value = f"{evse.current_A:.1f}"
+        else:
+            value = str(_AC_PHASE_VOLTAGE_V)
+        return {"value": value, "measurand": wire_measurand, "phase": phase, "unit": unit}
+    return None
+
+
+def build_meter_values_payload(evse: EVSE, measurands: list[str]) -> MeterValuesPayload:
+    """Build OCPP 1.6 MeterValues request payload for the configured measurands (FR-4).
+
+    Only measurands listed in `measurands` are included in the payload.
+    SoC is still calculated internally for session end detection regardless of configuration.
     """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-    sampled_values = [
-        {"value": str(int(round(evse.energy_Wh))), "measurand": "Energy.Active.Import.Register", "unit": "Wh"},
-        {"value": str(int(round(evse.power_W))), "measurand": "Power.Active.Import", "unit": "W"},
-        {"value": f"{evse.current_A:.1f}", "measurand": "Current.Import", "unit": "A"},
-    ]
-    # Only include SoC for DC chargers (AC chargers don't report battery SoC). Use evse.power_type so AC is correct even if caller passed wrong power_type.
-    if evse.power_type == "DC":
-        sampled_values.append(
-            {"value": str(round(evse.soc_pct, 1)), "measurand": "SoC", "unit": "Percent", "location": "EV"}
-        )
+    sampled_values = [sv for token in measurands if (sv := _build_sampled_value(token, evse)) is not None]
     return {
         "connectorId": evse.evse_id,
         "transactionId": evse.transaction_id,
@@ -80,7 +105,7 @@ async def _metering_loop(
     send_cb: SendMeterValuesCb,
     interval_s: float,
     stop_event: asyncio.Event,
-    power_type: str = "DC",
+    measurands: list[str],
     on_soc_full: OnSocFullCb | None = None,
 ) -> None:
     """
@@ -95,7 +120,7 @@ async def _metering_loop(
         and evse.transaction_id is not None
     ):
         update_evse_meter(evse, interval_s)
-        payload = build_meter_values_payload(evse, power_type)
+        payload = build_meter_values_payload(evse, measurands)
         await send_cb(payload)
         if (
             evse.soc_pct >= 100.0
@@ -112,17 +137,18 @@ async def _metering_loop(
 def start_metering_loop(
     evse: EVSE,
     send_cb: SendMeterValuesCb,
+    measurands: list[str],
     interval_s: float = 10.0,
-    power_type: str = "DC",
     on_soc_full: OnSocFullCb | None = None,
 ) -> tuple[asyncio.Task, asyncio.Event]:
     """
     Start one asyncio task per EVSE (FR-1). Callback receives OCPP-shaped payload.
     Returns (task, stop_event). Cancel by setting stop_event or cancelling the task.
     Optional on_soc_full is called once when SoC reaches 100% while Charging (e.g. to transition to SuspendedEV).
+    measurands: list of MeterValuesSampledData tokens to include in each MeterValues message.
     """
     stop_event = asyncio.Event()
     task = asyncio.create_task(
-        _metering_loop(evse, send_cb, interval_s, stop_event, power_type, on_soc_full)
+        _metering_loop(evse, send_cb, interval_s, stop_event, measurands, on_soc_full)
     )
     return task, stop_event

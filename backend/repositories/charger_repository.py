@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from models.charger import Charger as ChargerModel
 from models.evse import Evse as EvseModel
-from schemas.chargers import DEFAULT_CHARGER_CONFIG
+from schemas.chargers import DEFAULT_CHARGER_CONFIG, DEFAULT_METER_MEASURANDS_AC, DEFAULT_METER_MEASURANDS_DC
 
 
 def create_charger(
@@ -33,7 +33,10 @@ def create_charger(
         charge_point_vendor=charge_point_vendor,
         charge_point_model=charge_point_model,
         firmware_version=firmware_version,
-        config=dict(DEFAULT_CHARGER_CONFIG),
+        config={
+            **DEFAULT_CHARGER_CONFIG,
+            "MeterValuesSampledData": DEFAULT_METER_MEASURANDS_DC if power_type == "DC" else DEFAULT_METER_MEASURANDS_AC,
+        },
         power_type=power_type,
     )
     session.add(charger)
