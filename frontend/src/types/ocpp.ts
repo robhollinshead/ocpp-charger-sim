@@ -103,6 +103,7 @@ export interface ChargerConfigUpdate {
   AuthorizeRemoteTxRequests?: boolean;
   LocalAuthListEnabled?: boolean;
   OCPPAuthorizationEnabled?: boolean;
+  MeterValuesSampledData?: string;
 }
 
 

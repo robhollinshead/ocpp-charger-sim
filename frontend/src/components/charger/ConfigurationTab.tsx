@@ -9,15 +9,37 @@ import { toast } from 'sonner';
 import { useUpdateChargerConfig } from '@/api/chargers';
 import { PowerTypeChip } from '@/components/PowerTypeChip';
 
-const EDITABLE_KEYS = [
-  { key: 'HeartbeatInterval' as const, type: 'number' as const, label: 'HeartbeatInterval' },
-  { key: 'ConnectionTimeOut' as const, type: 'number' as const, label: 'ConnectionTimeOut' },
-  { key: 'MeterValuesSampleInterval' as const, type: 'number' as const, label: 'MeterValuesSampleInterval' },
-  { key: 'ClockAlignedDataInterval' as const, type: 'number' as const, label: 'ClockAlignedDataInterval' },
-  { key: 'AuthorizeRemoteTxRequests' as const, type: 'boolean' as const, label: 'AuthorizeRemoteTxRequests' },
-  { key: 'LocalAuthListEnabled' as const, type: 'boolean' as const, label: 'LocalAuthListEnabled' },
-  { key: 'OCPPAuthorizationEnabled' as const, type: 'boolean' as const, label: 'OCPPAuthorizationEnabled' },
-] as const;
+type EditableKeyType = 'number' | 'boolean' | 'string';
+
+interface EditableKeyDef {
+  key: keyof ChargerConfigUpdate;
+  type: EditableKeyType;
+  label: string;
+}
+
+const EDITABLE_KEYS: EditableKeyDef[] = [
+  { key: 'HeartbeatInterval', type: 'number', label: 'HeartbeatInterval' },
+  { key: 'ConnectionTimeOut', type: 'number', label: 'ConnectionTimeOut' },
+  { key: 'MeterValuesSampleInterval', type: 'number', label: 'MeterValuesSampleInterval' },
+  { key: 'ClockAlignedDataInterval', type: 'number', label: 'ClockAlignedDataInterval' },
+  { key: 'MeterValuesSampledData', type: 'string', label: 'MeterValuesSampledData' },
+  { key: 'AuthorizeRemoteTxRequests', type: 'boolean', label: 'AuthorizeRemoteTxRequests' },
+  { key: 'LocalAuthListEnabled', type: 'boolean', label: 'LocalAuthListEnabled' },
+  { key: 'OCPPAuthorizationEnabled', type: 'boolean', label: 'OCPPAuthorizationEnabled' },
+];
+
+const DEFAULT_MEASURANDS_DC = 'Energy.Active.Import.Register,Power.Active.Import,Current.Import,SoC';
+const DEFAULT_MEASURANDS_AC = 'Energy.Active.Import.Register,Power.Active.Import,Current.Import';
+
+const STATIC_DEFAULTS: Record<string, number | boolean> = {
+  HeartbeatInterval: 120,
+  ConnectionTimeOut: 60,
+  MeterValuesSampleInterval: 30,
+  ClockAlignedDataInterval: 900,
+  AuthorizeRemoteTxRequests: true,
+  LocalAuthListEnabled: true,
+  OCPPAuthorizationEnabled: true,
+};
 
 interface ConfigurationTabProps {
   charger: ChargerDetailResponse;
@@ -25,32 +47,32 @@ interface ConfigurationTabProps {
 
 export function ConfigurationTab({ charger }: ConfigurationTabProps) {
   const updateConfig = useUpdateChargerConfig(charger.charge_point_id);
-  const defaults: Record<string, number | boolean> = {
-    HeartbeatInterval: 120,
-    ConnectionTimeOut: 60,
-    MeterValuesSampleInterval: 30,
-    ClockAlignedDataInterval: 900,
-    AuthorizeRemoteTxRequests: true,
-    LocalAuthListEnabled: true,
-    OCPPAuthorizationEnabled: true,
-  };
 
   const initialEditable = useMemo(() => {
     const c = charger.config || {};
+    const measurandDefault = charger.power_type === 'AC' ? DEFAULT_MEASURANDS_AC : DEFAULT_MEASURANDS_DC;
     return EDITABLE_KEYS.reduce(
-      (acc, { key }) => {
+      (acc, { key, type }) => {
         if (c[key] !== undefined) {
-          acc[key] = typeof c[key] === 'boolean' ? c[key] : Number(c[key]);
+          if (type === 'boolean') {
+            acc[key] = Boolean(c[key]);
+          } else if (type === 'number') {
+            acc[key] = Number(c[key]);
+          } else {
+            acc[key] = String(c[key]);
+          }
+        } else if (key === 'MeterValuesSampledData') {
+          acc[key] = measurandDefault;
         } else {
-          acc[key] = defaults[key];
+          acc[key] = STATIC_DEFAULTS[key] ?? '';
         }
         return acc;
       },
-      {} as Record<string, number | boolean>
+      {} as Record<string, number | boolean | string>
     );
-  }, [charger.charge_point_id, charger.config]);
+  }, [charger.charge_point_id, charger.config, charger.power_type]);
 
-  const [editable, setEditable] = useState<Record<string, number | boolean>>(initialEditable);
+  const [editable, setEditable] = useState<Record<string, number | boolean | string>>(initialEditable);
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
@@ -58,15 +80,22 @@ export function ConfigurationTab({ charger }: ConfigurationTabProps) {
     setHasChanges(false);
   }, [charger.charge_point_id, initialEditable]);
 
-  const handleEditableChange = (key: string, value: number | boolean) => {
+  const handleEditableChange = (key: string, value: number | boolean | string) => {
     setEditable((prev) => ({ ...prev, [key]: value }));
     setHasChanges(true);
   };
 
   const handleSave = async () => {
     const payload: ChargerConfigUpdate = {};
-    EDITABLE_KEYS.forEach(({ key }) => {
-      if (editable[key] !== undefined) payload[key] = editable[key];
+    EDITABLE_KEYS.forEach(({ key, type }) => {
+      const val = editable[key];
+      if (val !== undefined) {
+        if (type === 'string') {
+          (payload as Record<string, unknown>)[key] = String(val);
+        } else {
+          (payload as Record<string, unknown>)[key] = val;
+        }
+      }
     });
     try {
       await updateConfig.mutateAsync(payload);
@@ -138,12 +167,20 @@ export function ConfigurationTab({ charger }: ConfigurationTabProps) {
           </CardHeader>
           <CardContent className="space-y-4">
             {EDITABLE_KEYS.map(({ key, type, label }) => (
-              <div key={key} className="flex items-center justify-between py-2">
+              <div key={key} className={`flex ${type === 'string' ? 'flex-col gap-1' : 'items-center justify-between'} py-2`}>
                 <label className="font-mono text-sm">{label}</label>
                 {type === 'boolean' ? (
                   <Switch
                     checked={editable[key] === true}
                     onCheckedChange={(checked) => handleEditableChange(key, checked)}
+                  />
+                ) : type === 'string' ? (
+                  <Input
+                    type="text"
+                    value={editable[key] as string}
+                    onChange={(e) => handleEditableChange(key, e.target.value)}
+                    className="w-full h-8 font-mono text-xs bg-secondary border-border"
+                    placeholder="Comma-separated measurands"
                   />
                 ) : (
                   <Input

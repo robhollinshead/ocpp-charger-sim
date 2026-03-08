@@ -14,6 +14,9 @@ from simulator_core.meter_engine import (
 
 pytestmark = pytest.mark.unit
 
+DC_MEASURANDS = ["Energy.Active.Import.Register", "Power.Active.Import", "Current.Import", "SoC"]
+AC_MEASURANDS = ["Energy.Active.Import.Register", "Power.Active.Import", "Current.Import"]
+
 
 def test_build_meter_values_payload():
     """build_meter_values_payload returns OCPP-shaped dict with connectorId, transactionId, meterValue."""
@@ -23,7 +26,7 @@ def test_build_meter_values_payload():
     evse.power_W = 11000.0
     evse.current_A = 47.8
     evse.soc_pct = 25.0
-    payload = build_meter_values_payload(evse)
+    payload = build_meter_values_payload(evse, DC_MEASURANDS)
     assert payload["connectorId"] == 1
     assert payload["transactionId"] == 42
     assert "meterValue" in payload
@@ -33,6 +36,40 @@ def test_build_meter_values_payload():
     assert "Energy.Active.Import.Register" in values
     assert "Power.Active.Import" in values
     assert "SoC" in values
+
+
+def test_build_meter_values_payload_ac_phase_measurands():
+    """AC phase measurands produce phase-tagged sampledValues with correct wire measurand names."""
+    evse = EVSE(evse_id=1, max_power_W=22000.0, power_type="AC")
+    evse.transaction_id = 1
+    evse.energy_Wh = 0.0
+    evse.power_W = 11000.0
+    evse.current_A = 16.0
+    evse.soc_pct = 0.0
+    measurands = [
+        "Energy.Active.Import.Register",
+        "Current.Import",
+        "Current.Import.L1",
+        "Current.Import.L2",
+        "Current.Import.L3",
+        "Voltage.L1-N",
+        "Voltage.L2-N",
+        "Voltage.L3-N",
+    ]
+    payload = build_meter_values_payload(evse, measurands)
+    sampled = payload["meterValue"][0]["sampledValue"]
+    by_phase = {(s["measurand"], s.get("phase")): s for s in sampled}
+    # Phase currents use measurand "Current.Import" with phase tag
+    assert ("Current.Import", "L1") in by_phase
+    assert ("Current.Import", "L2") in by_phase
+    assert ("Current.Import", "L3") in by_phase
+    # Phase currents same value as aggregate
+    assert by_phase[("Current.Import", "L1")]["value"] == by_phase[("Current.Import", None)]["value"]
+    # Phase voltages
+    assert ("Voltage", "L1-N") in by_phase
+    assert ("Voltage", "L2-N") in by_phase
+    assert ("Voltage", "L3-N") in by_phase
+    assert by_phase[("Voltage", "L1-N")]["value"] == "230"
 
 
 def test_update_evse_meter():
@@ -79,7 +116,7 @@ async def test_start_metering_loop_sends_once_then_stops():
     async def send_cb(payload):
         received.append(payload)
 
-    task, stop_event = start_metering_loop(evse, send_cb, interval_s=0.05)
+    task, stop_event = start_metering_loop(evse, send_cb, interval_s=0.05, measurands=DC_MEASURANDS)
     await asyncio.sleep(0.06)
     stop_event.set()
     await asyncio.wait_for(task, timeout=1.0)
@@ -92,14 +129,14 @@ async def test_start_metering_loop_sends_once_then_stops():
 
 
 def test_build_meter_values_payload_ac_excludes_soc():
-    """AC chargers should not include SoC in MeterValues payload."""
+    """AC chargers should not include SoC in MeterValues payload when AC measurands are configured."""
     evse = EVSE(evse_id=1, max_power_W=22000.0, power_type="AC")
     evse.transaction_id = 42
     evse.energy_Wh = 1000.0
     evse.power_W = 11000.0
     evse.current_A = 15.9
     evse.soc_pct = 25.0  # Calculated internally but not sent
-    payload = build_meter_values_payload(evse, power_type="AC")
+    payload = build_meter_values_payload(evse, AC_MEASURANDS)
     sampled = payload["meterValue"][0]["sampledValue"]
     measurands = {s["measurand"] for s in sampled}
     assert "Energy.Active.Import.Register" in measurands
@@ -109,14 +146,14 @@ def test_build_meter_values_payload_ac_excludes_soc():
 
 
 def test_build_meter_values_payload_dc_includes_soc():
-    """DC chargers should include SoC in MeterValues payload."""
+    """DC chargers should include SoC in MeterValues payload when DC measurands are configured."""
     evse = EVSE(evse_id=1, max_power_W=150000.0, power_type="DC")
     evse.transaction_id = 42
     evse.energy_Wh = 5000.0
     evse.power_W = 50000.0
     evse.current_A = 115.0
     evse.soc_pct = 30.0
-    payload = build_meter_values_payload(evse, power_type="DC")
+    payload = build_meter_values_payload(evse, DC_MEASURANDS)
     sampled = payload["meterValue"][0]["sampledValue"]
     measurands = {s["measurand"] for s in sampled}
     assert "SoC" in measurands
@@ -206,14 +243,14 @@ async def test_start_metering_loop_ac_excludes_soc():
     async def send_cb(payload):
         received.append(payload)
 
-    task, stop_event = start_metering_loop(evse, send_cb, interval_s=0.05, power_type="AC")
+    task, stop_event = start_metering_loop(evse, send_cb, interval_s=0.05, measurands=AC_MEASURANDS)
     await asyncio.sleep(0.06)
     stop_event.set()
     await asyncio.wait_for(task, timeout=1.0)
     assert len(received) >= 1
     sampled = received[0]["meterValue"][0]["sampledValue"]
-    measurands = {s["measurand"] for s in sampled}
-    assert "SoC" not in measurands
+    measurand_names = {s["measurand"] for s in sampled}
+    assert "SoC" not in measurand_names
 
 
 def _power_from_payload(payload):
@@ -246,7 +283,7 @@ async def test_start_metering_loop_calls_on_soc_full_once_and_continues_with_zer
         evse.transition_to(EvseState.SuspendedEV)
 
     task, stop_event = start_metering_loop(
-        evse, send_cb, interval_s=1.0, power_type="DC", on_soc_full=on_soc_full
+        evse, send_cb, interval_s=1.0, measurands=DC_MEASURANDS, on_soc_full=on_soc_full
     )
     await asyncio.sleep(3.5)  # allow a few ticks: first hits 100% and calls on_soc_full, then more with 0 power
     stop_event.set()
@@ -275,7 +312,7 @@ async def test_start_metering_loop_without_on_soc_full_continues_at_100_soc():
     async def send_cb(payload):
         received.append(payload)
 
-    task, stop_event = start_metering_loop(evse, send_cb, interval_s=1.0, power_type="DC")
+    task, stop_event = start_metering_loop(evse, send_cb, interval_s=1.0, measurands=DC_MEASURANDS)
     await asyncio.sleep(2.5)
     stop_event.set()
     await asyncio.wait_for(task, timeout=2.0)

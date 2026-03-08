@@ -18,6 +18,26 @@ DEFAULT_CHARGER_CONFIG: dict = {
     "OCPPAuthorizationEnabled": True,
 }
 
+# Default MeterValuesSampledData per power type.
+DEFAULT_METER_MEASURANDS_DC = "Energy.Active.Import.Register,Power.Active.Import,Current.Import,SoC"
+DEFAULT_METER_MEASURANDS_AC = "Energy.Active.Import.Register,Power.Active.Import,Current.Import"
+
+# Supported MeterValuesSampledData tokens by power type.
+SUPPORTED_MEASURANDS_COMMON: frozenset[str] = frozenset({
+    "Energy.Active.Import.Register",
+    "Power.Active.Import",
+    "Current.Import",
+})
+SUPPORTED_MEASURANDS_DC_ONLY: frozenset[str] = frozenset({"SoC"})
+SUPPORTED_MEASURANDS_AC_PHASE: frozenset[str] = frozenset({
+    "Current.Import.L1",
+    "Current.Import.L2",
+    "Current.Import.L3",
+    "Voltage.L1-N",
+    "Voltage.L2-N",
+    "Voltage.L3-N",
+})
+
 
 class ChargerCreate(BaseModel):
     """Payload for creating a charger."""
@@ -53,6 +73,7 @@ class ChargerConfigUpdate(BaseModel):
     AuthorizeRemoteTxRequests: bool | None = None
     LocalAuthListEnabled: bool | None = None
     OCPPAuthorizationEnabled: bool | None = None
+    MeterValuesSampledData: str | None = None
 
 
 class MeterSnapshot(BaseModel):

@@ -17,6 +17,7 @@ from ocpp.v16.enums import (
     ChargingProfileStatus,
     ConfigurationStatus,
     Measurand,
+    Phase,
     Reason,
     RemoteStartStopStatus,
     UnitOfMeasure,
@@ -107,6 +108,7 @@ _KNOWN_CONFIG_KEYS = frozenset({
     "AuthorizeRemoteTxRequests",
     "LocalAuthListEnabled",
     "OCPPAuthorizationEnabled",
+    "MeterValuesSampledData",
 })
 
 # Keys that accept integer values.
@@ -123,6 +125,9 @@ _BOOL_CONFIG_KEYS = frozenset({
     "LocalAuthListEnabled",
     "OCPPAuthorizationEnabled",
 })
+
+# Keys that accept string values.
+_STRING_CONFIG_KEYS = frozenset({"MeterValuesSampledData"})
 
 # Map our EvseState to OCPP ChargePointStatus
 _EVSE_STATE_TO_OCPP: dict[EvseState, ChargePointStatus] = {
@@ -165,6 +170,10 @@ def _dict_to_meter_values_payload(d: DictMeterPayload) -> call.MeterValuesPayloa
             }
             if "location" in sv and sv["location"] is not None:
                 kw["location"] = sv["location"]
+            if "phase" in sv and sv["phase"] is not None:
+                phase_str = sv["phase"]
+                phase_key = phase_str.lower().replace("-", "_")
+                kw["phase"] = getattr(Phase, phase_key, phase_str)
             sampled.append(datatypes.SampledValue(**kw))
         meter_value_list.append(datatypes.MeterValue(timestamp=ts, sampled_value=sampled))
     return call.MeterValuesPayload(
@@ -300,6 +309,8 @@ class SimulatorChargePoint(ChargePoint):
                 parsed = False
             else:
                 return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.rejected)
+        elif key in _STRING_CONFIG_KEYS:
+            parsed = value
         else:
             return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.not_supported)
 
@@ -517,9 +528,9 @@ class SimulatorChargePoint(ChargePoint):
             await self.send_status_notification(connector_id, EvseState.SuspendedEV)
 
         interval_s = self._charger.get_meter_interval_s()
-        power_type = getattr(self._charger, "power_type", "DC")
+        measurands = self._charger.get_meter_measurands()
         task, stop_event = start_metering_loop(
-            evse, send_meter_values, interval_s, power_type, on_soc_full=on_soc_full
+            evse, send_meter_values, measurands, interval_s, on_soc_full=on_soc_full
         )
         self._meter_tasks[connector_id] = (task, stop_event)
         return resp.transaction_id

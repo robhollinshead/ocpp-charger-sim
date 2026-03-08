@@ -3,7 +3,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
+from schemas.chargers import DEFAULT_METER_MEASURANDS_AC, DEFAULT_METER_MEASURANDS_DC
 from simulator_core.evse import EVSE
+
+_DEFAULT_MEASURANDS_DC = DEFAULT_METER_MEASURANDS_DC.split(",")
+_DEFAULT_MEASURANDS_AC = DEFAULT_METER_MEASURANDS_AC.split(",")
 
 
 class Charger:
@@ -129,6 +133,13 @@ class Charger:
     def get_meter_interval_s(self) -> float:
         """MeterValues sample interval in seconds (default 30s)."""
         return float(self.config.get("MeterValuesSampleInterval", 30))
+
+    def get_meter_measurands(self) -> list[str]:
+        """Return configured MeterValuesSampledData as a list of tokens, with power-type default."""
+        val = self.config.get("MeterValuesSampledData")
+        if val:
+            return [m.strip() for m in str(val).split(",") if m.strip()]
+        return _DEFAULT_MEASURANDS_DC if self.power_type == "DC" else _DEFAULT_MEASURANDS_AC
 
     def get_heartbeat_interval_s(self) -> int:
         """Heartbeat interval in seconds (default 120s)."""
