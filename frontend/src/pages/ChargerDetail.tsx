@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useLocations } from '@/api/locations';
-import { useChargerDetail, useDeleteCharger, useConnectCharger, useDisconnectCharger } from '@/api/chargers';
+import { useChargerDetail, useDeleteCharger, useConnectCharger, useDisconnectCharger, useGoOffline, useGoOnline } from '@/api/chargers';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { ConnectionBadge } from '@/components/ConnectionBadge';
 import { ChargerDetailsEdit } from '@/components/ChargerDetailsEdit';
@@ -21,7 +21,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Settings, FileText, Zap, Plug, Trash2, Link2, Link2Off } from 'lucide-react';
+import { Settings, FileText, Zap, Plug, Trash2, Link2, Link2Off, Wifi, WifiOff } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function ChargerDetail() {
@@ -33,6 +33,8 @@ export default function ChargerDetail() {
   const deleteCharger = useDeleteCharger(locationId);
   const connectCharger = useConnectCharger(locationId);
   const disconnectCharger = useDisconnectCharger(locationId);
+  const goOffline = useGoOffline(locationId);
+  const goOnline = useGoOnline(locationId);
   const location = locations.find((l) => l.id === locationId);
 
   async function handleDeleteCharger() {
@@ -122,6 +124,12 @@ export default function ChargerDetail() {
               <div className="flex items-center gap-3 mb-2">
                 <h1 className="text-2xl font-bold text-foreground">{charger.charger_name}</h1>
                 <ConnectionBadge connected={charger.connected} />
+                {charger.offline_mode && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium bg-warning/20 text-warning border-warning/30">
+                    <WifiOff className="h-3 w-3" />
+                    Offline{charger.cached_message_count ? ` (${charger.cached_message_count} cached)` : ''}
+                  </span>
+                )}
               </div>
               <p className="text-muted-foreground font-mono text-sm">{charger.charge_point_id}</p>
             </div>
@@ -141,10 +149,32 @@ export default function ChargerDetail() {
                   variant="outline"
                   size="sm"
                   onClick={() => connectCharger.mutate(charger.id)}
-                  disabled={connectCharger.isPending}
+                  disabled={connectCharger.isPending || charger.offline_mode}
                 >
                   <Link2 className="h-4 w-4 mr-1" />
                   {connectCharger.isPending ? 'Connecting…' : 'Connect'}
+                </Button>
+              )}
+              {charger.connected && !charger.offline_mode && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => goOffline.mutate(charger.id)}
+                  disabled={goOffline.isPending}
+                >
+                  <WifiOff className="h-4 w-4 mr-1" />
+                  {goOffline.isPending ? 'Going offline…' : 'Go Offline'}
+                </Button>
+              )}
+              {charger.offline_mode && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => goOnline.mutate(charger.id)}
+                  disabled={goOnline.isPending}
+                >
+                  <Wifi className="h-4 w-4 mr-1" />
+                  {goOnline.isPending ? 'Going online…' : 'Go Online'}
                 </Button>
               )}
               <Button

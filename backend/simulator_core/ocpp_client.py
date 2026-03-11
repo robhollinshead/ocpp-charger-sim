@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ocpp.routing import on
 from ocpp.v16 import ChargePoint, call, call_result, datatypes
+from websockets.exceptions import ConnectionClosed
 from ocpp.v16.enums import (
     Action,
     AuthorizationStatus,
@@ -109,6 +110,7 @@ _KNOWN_CONFIG_KEYS = frozenset({
     "LocalAuthListEnabled",
     "OCPPAuthorizationEnabled",
     "MeterValuesSampledData",
+    "TxDefaultPowerW",
 })
 
 # Keys that accept integer values.
@@ -128,6 +130,9 @@ _BOOL_CONFIG_KEYS = frozenset({
 
 # Keys that accept string values.
 _STRING_CONFIG_KEYS = frozenset({"MeterValuesSampledData"})
+
+# Keys that accept float values.
+_FLOAT_CONFIG_KEYS = frozenset({"TxDefaultPowerW"})
 
 # Map our EvseState to OCPP ChargePointStatus
 _EVSE_STATE_TO_OCPP: dict[EvseState, ChargePointStatus] = {
@@ -192,7 +197,7 @@ class SimulatorChargePoint(ChargePoint):
     def __init__(self, charge_point_id: str, connection: Any, response_timeout: int = 30) -> None:
         super().__init__(charge_point_id, connection, response_timeout=response_timeout)
         self._charger: Optional[Charger] = None
-        self._meter_tasks: dict[int, tuple[asyncio.Task, asyncio.Event]] = {}
+        # NOTE: _meter_tasks lives on Charger (not here) so tasks survive reconnects.
         self._transaction_id_counter = 0
 
     def set_charger(self, charger: Charger) -> None:
@@ -201,6 +206,58 @@ class SimulatorChargePoint(ChargePoint):
     def _next_transaction_id(self) -> int:
         self._transaction_id_counter += 1
         return self._transaction_id_counter
+
+    def _make_send_meter_values(
+        self,
+        evse: "EVSE",
+        connector_id: int,
+        charger: "Charger",
+    ) -> "Callable[[DictMeterPayload], Any]":
+        """Build the send_meter_values callback for the metering loop.
+
+        Routes through charger._ocpp_client when online (so meter ticks always go via the
+        currently-active CP, not a stale or ephemeral self). Falls back to self._send_or_cache
+        when offline so ticks are cached for replay.
+        """
+        async def send_meter_values(payload: DictMeterPayload) -> None:
+            ocpp_payload = _dict_to_meter_values_payload(payload)
+            local_tx = evse.transaction_id if evse.transaction_id and evse.transaction_id < 0 else None
+            if charger.is_offline_mode():
+                await self._send_or_cache(ocpp_payload, connector_id=connector_id, local_tx_id=local_tx)
+            else:
+                active_cp = charger._ocpp_client
+                if active_cp is not None:
+                    await active_cp._send_or_cache(ocpp_payload, connector_id=connector_id, local_tx_id=local_tx)
+                # else: transitioning between connections — skip this tick
+        return send_meter_values
+
+    async def _send_or_cache(
+        self,
+        payload: Any,
+        *,
+        connector_id: int = 0,
+        local_tx_id: Optional[int] = None,
+    ) -> Any:
+        """Send an OCPP message if online; cache it if charger is in offline mode.
+
+        When offline, a CachedMessage is appended to charger._message_cache and None is
+        returned. When online, the message is sent via self.call() and the response returned.
+        connector_id and local_tx_id are stored on the cache entry for replay reconciliation.
+        """
+        from simulator_core.charger import CachedMessage
+        charger = self._charger
+        if charger is not None and charger.is_offline_mode():
+            msg_type = type(payload).__name__.replace("Payload", "")
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            charger.cache_message(CachedMessage(
+                message_type=msg_type,
+                payload=payload,
+                connector_id=connector_id,
+                local_transaction_id=local_tx_id,
+                timestamp=now,
+            ))
+            return None
+        return await self.call(payload)
 
     async def send_boot_notification(self) -> call_result.BootNotificationPayload:
         """Send BootNotification on connect (vendor, model, firmware from charger)."""
@@ -242,7 +299,7 @@ class SimulatorChargePoint(ChargePoint):
             info=info,
             vendor_error_code=vendor_error_code,
         )
-        await self.call(req)
+        await self._send_or_cache(req, connector_id=connector_id)
 
     @on(Action.Authorize)
     async def on_authorize(self, id_tag: str, **kwargs: Any) -> call_result.AuthorizePayload:
@@ -309,6 +366,15 @@ class SimulatorChargePoint(ChargePoint):
                 parsed = False
             else:
                 return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.rejected)
+        elif key in _FLOAT_CONFIG_KEYS:
+            try:
+                parsed = float(value)
+            except (ValueError, TypeError):
+                return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.rejected)
+            # Propagate TxDefaultPowerW to all EVSEs immediately
+            if key == "TxDefaultPowerW":
+                for evse in self._charger.evses:
+                    evse.tx_default_power_W = parsed
         elif key in _STRING_CONFIG_KEYS:
             parsed = value
         else:
@@ -359,7 +425,16 @@ class SimulatorChargePoint(ChargePoint):
                 else:
                     # DC: Use pack voltage at 50% SoC for conversion
                     limit = limit * get_pack_voltage_V(50.0)
-            evse.set_offered_limit_W(limit)
+            valid_to_str = cs_charging_profiles.get("valid_to") or cs_charging_profiles.get("validTo")
+            valid_to: Optional[datetime] = None
+            if valid_to_str:
+                try:
+                    valid_to = datetime.fromisoformat(valid_to_str.replace("Z", "+00:00"))
+                    if valid_to.tzinfo is None:
+                        valid_to = valid_to.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    pass
+            evse.set_offered_limit_W(limit, valid_to=valid_to)
             return call_result.SetChargingProfilePayload(status=ChargingProfileStatus.accepted)
         except (TypeError, KeyError, ValueError) as e:
             LOG.warning("SetChargingProfile parse error: %s", e)
@@ -436,6 +511,12 @@ class SimulatorChargePoint(ChargePoint):
         """
         if not self._charger:
             return None
+        # Dispatch to offline path when charger is in offline mode
+        if self._charger.is_offline_mode():
+            return await self._start_transaction_offline(
+                connector_id, id_tag,
+                start_soc_pct=start_soc_pct, battery_capacity_kwh=battery_capacity_kwh,
+            )
         evse = self._charger.get_evse(connector_id)
         if not evse or evse.transaction_id is not None:
             return None
@@ -519,20 +600,23 @@ class SimulatorChargePoint(ChargePoint):
             return None
         await self.send_status_notification(connector_id, EvseState.Charging)
 
-        async def send_meter_values(payload: DictMeterPayload) -> None:
-            ocpp_payload = _dict_to_meter_values_payload(payload)
-            await self.call(ocpp_payload)
+        charger = self._charger  # confirmed non-None above; capture for closures
+        send_meter_values = self._make_send_meter_values(evse, connector_id, charger)
 
         async def on_soc_full() -> None:
             evse.transition_to(EvseState.SuspendedEV)
-            await self.send_status_notification(connector_id, EvseState.SuspendedEV)
+            # Use the currently-active CP so this works correctly after a reconnect
+            active_cp = charger._ocpp_client
+            cp = active_cp if active_cp is not None else self
+            await cp.send_status_notification(connector_id, EvseState.SuspendedEV)
 
-        interval_s = self._charger.get_meter_interval_s()
-        measurands = self._charger.get_meter_measurands()
+        interval_s = charger.get_meter_interval_s()
+        measurands = charger.get_meter_measurands()
         task, stop_event = start_metering_loop(
             evse, send_meter_values, measurands, interval_s, on_soc_full=on_soc_full
         )
-        self._meter_tasks[connector_id] = (task, stop_event)
+        # Store on Charger (not self) so tasks survive WS reconnects
+        self._charger._meter_tasks[connector_id] = (task, stop_event)
         return resp.transaction_id
 
     async def stop_transaction(self, connector_id: int, reason: Reason = Reason.local) -> bool:
@@ -543,14 +627,19 @@ class SimulatorChargePoint(ChargePoint):
         if not evse or evse.transaction_id is None:
             return False
 
-        task_stop = self._meter_tasks.pop(connector_id, None)
+        # Meter tasks live on Charger so they survive reconnects
+        task_stop = self._charger._meter_tasks.pop(connector_id, None)
         if task_stop:
             task, stop_event = task_stop
             stop_event.set()
             task.cancel()
             try:
                 await task
-            except asyncio.CancelledError:
+            except (asyncio.CancelledError, ConnectionClosed):
+                # CancelledError: normal task cancellation.
+                # ConnectionClosed: the WS closed while the meter loop was mid-tick
+                # (e.g. CSMS sent RemoteStopTransaction then immediately closed the connection).
+                # In both cases the meter task is done; discard the exception.
                 pass
 
         transaction_id = evse.transaction_id
@@ -558,6 +647,7 @@ class SimulatorChargePoint(ChargePoint):
         await self.send_status_notification(connector_id, EvseState.Finishing)
 
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        local_tx = transaction_id if transaction_id is not None and transaction_id < 0 else None
         req = call.StopTransactionPayload(
             meter_stop=int(evse.energy_Wh),
             timestamp=now,
@@ -565,12 +655,160 @@ class SimulatorChargePoint(ChargePoint):
             reason=reason,
             id_tag=None,
         )
-        await self.call(req)
+        # Cache if offline, send if online
+        await self._send_or_cache(req, connector_id=connector_id, local_tx_id=local_tx)
 
         evse.end_transaction()
         evse.transition_to(EvseState.Available)
         await self.send_status_notification(connector_id, EvseState.Available)
         return True
+
+
+    async def _start_transaction_offline(
+        self,
+        connector_id: int,
+        id_tag: str,
+        *,
+        start_soc_pct: Optional[float] = None,
+        battery_capacity_kwh: Optional[float] = None,
+    ) -> Optional[int]:
+        """Start a transaction while offline: generate a local negative tx ID, cache OCPP messages.
+
+        The local transaction ID is reconciled with the CSMS-assigned ID during replay.
+        """
+        charger = self._charger
+        if not charger:
+            return None
+        evse = charger.get_evse(connector_id)
+        if not evse or evse.transaction_id is not None:
+            return None
+        if not evse.transition_to(EvseState.Preparing):
+            return None
+
+        await self.send_status_notification(connector_id, EvseState.Preparing)
+
+        # Resolve vehicle params
+        if start_soc_pct is None or battery_capacity_kwh is None:
+            resolver = charger.get_vehicle_resolver()
+            result = resolver(id_tag) if resolver else None
+            if start_soc_pct is None:
+                start_soc_pct = result[1] if result else 20.0
+            if battery_capacity_kwh is None:
+                battery_capacity_kwh = result[0] if result else 100.0
+
+        local_tx_id = charger.next_offline_transaction_id()
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+        evse.start_transaction(
+            local_tx_id, id_tag,
+            start_soc_pct=start_soc_pct,
+            battery_capacity_wh=battery_capacity_kwh,
+        )
+        if not evse.transition_to(EvseState.Charging):
+            evse.end_transaction()
+            evse.transition_to(EvseState.Available)
+            await self.send_status_notification(connector_id, EvseState.Available)
+            return None
+
+        # Cache StartTransaction (will be sent to CSMS on replay)
+        start_req = call.StartTransactionPayload(
+            connector_id=connector_id,
+            id_tag=id_tag,
+            meter_start=int(evse.energy_Wh),
+            timestamp=now,
+        )
+        await self._send_or_cache(start_req, connector_id=connector_id, local_tx_id=local_tx_id)
+        await self.send_status_notification(connector_id, EvseState.Charging)
+
+        send_meter_values = self._make_send_meter_values(evse, connector_id, charger)
+
+        async def on_soc_full() -> None:
+            evse.transition_to(EvseState.SuspendedEV)
+            # Use the currently-active CP if online (avoids AttributeError on ephemeral/stale self)
+            active_cp = charger._ocpp_client
+            cp = active_cp if active_cp is not None else self
+            await cp.send_status_notification(connector_id, EvseState.SuspendedEV)
+
+        interval_s = charger.get_meter_interval_s()
+        measurands = charger.get_meter_measurands()
+        task, stop_event = start_metering_loop(
+            evse, send_meter_values, measurands, interval_s, on_soc_full=on_soc_full
+        )
+        charger._meter_tasks[connector_id] = (task, stop_event)
+        return local_tx_id
+
+
+def _patch_meter_values_tx_id(payload: call.MeterValuesPayload, real_tx_id: int) -> call.MeterValuesPayload:
+    """Return a new MeterValuesPayload with the transaction_id replaced."""
+    return call.MeterValuesPayload(
+        connector_id=payload.connector_id,
+        transaction_id=real_tx_id,
+        meter_value=payload.meter_value,
+    )
+
+
+def _patch_stop_transaction_tx_id(payload: call.StopTransactionPayload, real_tx_id: int) -> call.StopTransactionPayload:
+    """Return a new StopTransactionPayload with the transaction_id replaced."""
+    return call.StopTransactionPayload(
+        meter_stop=payload.meter_stop,
+        timestamp=payload.timestamp,
+        transaction_id=real_tx_id,
+        reason=payload.reason,
+        id_tag=payload.id_tag,
+    )
+
+
+async def replay_cached_messages(charger: Charger, cp: SimulatorChargePoint) -> None:
+    """Replay OCPP messages cached during offline operation.
+
+    Messages are sent in the order they were cached. For offline-started transactions
+    (local_transaction_id < 0), the CSMS-assigned transaction_id from the StartTransaction
+    response is used to patch subsequent MeterValues and StopTransaction payloads.
+    """
+    messages = charger.pop_message_cache()
+    if not messages:
+        return
+    LOG.info("Replaying %d cached OCPP message(s) for %s", len(messages), charger.charge_point_id)
+
+    # Map local (negative) tx_id -> real CSMS tx_id
+    tx_id_map: dict[int, int] = {}
+
+    for msg in messages:
+        try:
+            if msg.message_type == "StatusNotification":
+                await cp.call(msg.payload)
+
+            elif msg.message_type == "StartTransaction":
+                resp = await cp.call(msg.payload)
+                if resp is not None and resp.transaction_id > 0 and msg.local_transaction_id is not None:
+                    real_id = resp.transaction_id
+                    local_id = msg.local_transaction_id
+                    tx_id_map[local_id] = real_id
+                    LOG.info("Replay: mapped local tx %d -> CSMS tx %d", local_id, real_id)
+                    # Patch live EVSE with the real transaction_id
+                    evse = charger.get_evse(msg.connector_id)
+                    if evse is not None and evse.transaction_id == local_id:
+                        evse.transaction_id = real_id
+
+            elif msg.message_type == "MeterValues":
+                payload = msg.payload
+                local_tx = msg.local_transaction_id
+                if local_tx is not None and local_tx in tx_id_map:
+                    payload = _patch_meter_values_tx_id(payload, tx_id_map[local_tx])
+                await cp.call(payload)
+
+            elif msg.message_type == "StopTransaction":
+                payload = msg.payload
+                tx_id = getattr(payload, "transaction_id", None)
+                if tx_id is not None and tx_id in tx_id_map:
+                    payload = _patch_stop_transaction_tx_id(payload, tx_id_map[tx_id])
+                await cp.call(payload)
+
+            else:
+                LOG.debug("Replay: skipping unrecognised message type %s", msg.message_type)
+
+        except Exception as e:
+            LOG.warning("Replay error for %s (connector %d): %s", msg.message_type, msg.connector_id, e)
 
 
 def build_connection_url(connection_url: str, charge_point_id: str) -> str:
@@ -636,11 +874,13 @@ async def connect_charge_point(
         delay = base_delay  # reset backoff on successful connect
 
         async def boot_and_status() -> None:
-            """Send BootNotification then StatusNotification per EVSE. Must run alongside cp.start() so responses can be received."""
+            """Send BootNotification, StatusNotification per EVSE, then replay any offline-cached messages."""
             await cp.send_boot_notification()
             for evse in charger.evses:
                 status = evse.state if evse.state else EvseState.Available
                 await cp.send_status_notification(evse.evse_id, status)
+            # Replay messages that were cached during offline operation
+            await replay_cached_messages(charger, cp)
 
         async def heartbeat_loop() -> None:
             """Send Heartbeat every HeartbeatInterval seconds until cancelled."""
@@ -671,5 +911,17 @@ async def connect_charge_point(
 
         if charger.should_stop_connect():
             break
-        await asyncio.sleep(delay)
-        delay = min(delay * 2, max_delay)
+
+        # Offline wait: if charger is in offline mode, hold here until set_online() is called.
+        # Meter tasks keep running on Charger; sends are cached via _send_or_cache.
+        if charger.is_offline_mode():
+            LOG.info("Charger %s is in offline mode — waiting for go-online", charger.charge_point_id)
+            await charger.wait_for_online()
+            if charger.should_stop_connect():
+                break
+            LOG.info("Charger %s exited offline mode — reconnecting", charger.charge_point_id)
+            # Reset backoff for clean reconnect after intentional offline period
+            delay = base_delay
+        else:
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, max_delay)

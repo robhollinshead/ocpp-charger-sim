@@ -262,7 +262,8 @@ async def test_soc_full_transitions_to_suspended_ev_and_meter_values_continue(mo
     assert (1, EvseState.SuspendedEV) in status_sent
 
     # Clean up dummy meter task so it does not stay pending
-    meter_task, _ = cp._meter_tasks.get(1, (None, None))
+    # _meter_tasks lives on Charger (moved there so tasks survive reconnects)
+    meter_task, _ = cp._charger._meter_tasks.get(1, (None, None))
     if meter_task is not None:
         meter_task.cancel()
         try:

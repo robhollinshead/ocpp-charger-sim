@@ -92,6 +92,8 @@ export interface ChargerDetailResponse extends ChargerResponse {
   security_profile?: 'none' | 'basic';
   basic_auth_password_set?: boolean;
   power_type?: 'AC' | 'DC';
+  offline_mode?: boolean;
+  cached_message_count?: number;
 }
 
 /** Payload for updating charger OCPP config (API request). */
@@ -104,6 +106,7 @@ export interface ChargerConfigUpdate {
   LocalAuthListEnabled?: boolean;
   OCPPAuthorizationEnabled?: boolean;
   MeterValuesSampledData?: string;
+  TxDefaultPowerW?: number;
 }
 
 

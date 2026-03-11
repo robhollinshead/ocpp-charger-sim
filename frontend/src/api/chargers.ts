@@ -297,6 +297,57 @@ export function useInjectStatus(chargePointId: string | undefined) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Offline mode
+// ---------------------------------------------------------------------------
+
+async function goOffline(chargePointId: string): Promise<void> {
+  await apiFetch(`${API_PREFIX}/chargers/${chargePointId}/go-offline`, { method: 'POST' });
+}
+
+async function goOnline(chargePointId: string): Promise<{ status: string; cached_messages: number }> {
+  return apiFetch<{ status: string; cached_messages: number }>(
+    `${API_PREFIX}/chargers/${chargePointId}/go-online`,
+    { method: 'POST' }
+  );
+}
+
+export function useGoOffline(locationId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (chargePointId: string) => goOffline(chargePointId),
+    onSuccess: (_, chargePointId) => {
+      queryClient.invalidateQueries({ queryKey: ['chargers', 'detail', chargePointId] });
+      if (locationId) queryClient.invalidateQueries({ queryKey: chargersQueryKey(locationId) });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || 'Failed to go offline');
+    },
+  });
+}
+
+export function useGoOnline(locationId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (chargePointId: string) => goOnline(chargePointId),
+    onSuccess: (data, chargePointId) => {
+      const msg = data.cached_messages > 0
+        ? `Going online — replaying ${data.cached_messages} cached message(s)`
+        : 'Going online';
+      toast.success(msg);
+      const refetch = () => {
+        void queryClient.refetchQueries({ queryKey: ['chargers', 'detail', chargePointId] });
+        if (locationId) void queryClient.refetchQueries({ queryKey: chargersQueryKey(locationId) });
+      };
+      refetch();
+      CONNECT_REFETCH_DELAYS_MS.forEach((delayMs) => setTimeout(refetch, delayMs));
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || 'Failed to go online');
+    },
+  });
+}
+
 export function useStartTransaction(chargePointId: string | undefined, locationId: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({

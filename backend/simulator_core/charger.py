@@ -1,13 +1,40 @@
 """Charger model: identity, EVSEs, config, optional OCPP connection."""
+import asyncio
+import logging
 import uuid
+from collections import deque
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Callable, Optional
+
+LOG = logging.getLogger(__name__)
 
 from schemas.chargers import DEFAULT_METER_MEASURANDS_AC, DEFAULT_METER_MEASURANDS_DC
 from simulator_core.evse import EVSE
 
+
+class ConnectivityMode(str, Enum):
+    """Charger connectivity mode: ONLINE (normal) or OFFLINE (forced, cache messages)."""
+    ONLINE = "online"
+    OFFLINE = "offline"
+
+
+@dataclass
+class CachedMessage:
+    """An OCPP message cached during offline operation for replay on reconnect."""
+    message_type: str           # "StatusNotification" | "StartTransaction" | "StopTransaction" | "MeterValues"
+    payload: Any                # ocpp call.XxxPayload object
+    connector_id: int           # which EVSE connector
+    local_transaction_id: Optional[int]  # negative if offline-started tx, None for online-started tx
+    timestamp: str              # ISO 8601 UTC timestamp when cached
+
 _DEFAULT_MEASURANDS_DC = DEFAULT_METER_MEASURANDS_DC.split(",")
 _DEFAULT_MEASURANDS_AC = DEFAULT_METER_MEASURANDS_AC.split(",")
+
+# Maximum cached messages per charger (guards against unbounded growth during long offline periods).
+# At the default 30s interval, this covers ~1 hour of meter data for a single active transaction.
+_MAX_CACHE_SIZE = 120
 
 
 class Charger:
@@ -32,6 +59,11 @@ class Charger:
         "_stop_connect",
         "_ocpp_log",
         "_vehicle_resolver",
+        "_connectivity_mode",
+        "_online_event",
+        "_message_cache",
+        "_offline_tx_counter",
+        "_meter_tasks",
     )
 
     def __init__(
@@ -63,9 +95,17 @@ class Charger:
         self._stop_connect = False
         self._ocpp_log: list[dict[str, Any]] = []  # Session-scoped OCPP message log
         self._vehicle_resolver: Optional[Callable[[str], Optional[tuple[float, float]]]] = None
-        # Propagate power_type to EVSEs
+        self._connectivity_mode: ConnectivityMode = ConnectivityMode.ONLINE
+        self._online_event: asyncio.Event = asyncio.Event()
+        self._online_event.set()  # starts in online state
+        self._message_cache: deque[CachedMessage] = deque(maxlen=_MAX_CACHE_SIZE)  # Bounded FIFO queue; oldest dropped if full
+        self._offline_tx_counter: int = 0  # Counts down: 0, -1, -2, ... for offline transaction IDs
+        self._meter_tasks: dict[int, Any] = {}  # connector_id -> (task, stop_event); lives on Charger so it survives reconnects
+        # Propagate power_type and TxDefaultPowerW to EVSEs
+        tx_default_w = self.get_tx_default_power_w()
         for evse in self.evses:
             evse.power_type = power_type
+            evse.tx_default_power_W = tx_default_w
 
     def set_vehicle_resolver(
         self, resolver: Optional[Callable[[str], Optional[tuple[float, float]]]]
@@ -148,6 +188,56 @@ class Charger:
     def is_ocpp_authorization_enabled(self) -> bool:
         """True if charger should send Authorize to CSMS before StartTransaction (default True)."""
         return bool(self.config.get("OCPPAuthorizationEnabled", True))
+
+    # --------------- Offline / connectivity mode ---------------
+
+    def is_offline_mode(self) -> bool:
+        """True when charger is in forced offline mode (WS closed, messages cached)."""
+        return self._connectivity_mode == ConnectivityMode.OFFLINE
+
+    def set_offline(self) -> None:
+        """Enter forced offline mode. Does NOT set _stop_connect — connect loop stays alive."""
+        self._connectivity_mode = ConnectivityMode.OFFLINE
+        self._online_event.clear()
+
+    def set_online(self) -> None:
+        """Exit forced offline mode and allow the connect loop to reconnect."""
+        self._connectivity_mode = ConnectivityMode.ONLINE
+        self._online_event.set()
+
+    async def wait_for_online(self) -> None:
+        """Suspend the caller until set_online() is called (used by the connect loop)."""
+        await self._online_event.wait()
+
+    def get_tx_default_power_w(self) -> float:
+        """Fallback charging power (W) when no SetChargingProfile has been received (default 7400 W)."""
+        return float(self.config.get("TxDefaultPowerW", 7400.0))
+
+    # --------------- Offline message cache ---------------
+
+    def next_offline_transaction_id(self) -> int:
+        """Generate a local transaction ID for offline-started sessions (-1, -2, ...)."""
+        self._offline_tx_counter -= 1
+        return self._offline_tx_counter
+
+    def cache_message(self, msg: "CachedMessage") -> None:
+        """Append an OCPP message to the offline cache (bounded FIFO; oldest dropped when full)."""
+        if len(self._message_cache) == _MAX_CACHE_SIZE:
+            LOG.warning(
+                "Charger %s offline cache full (%d); dropping oldest message",
+                self.charge_point_id, _MAX_CACHE_SIZE,
+            )
+        self._message_cache.append(msg)
+
+    def pop_message_cache(self) -> list["CachedMessage"]:
+        """Drain and return all cached messages; clears the cache."""
+        msgs = list(self._message_cache)
+        self._message_cache.clear()
+        return msgs
+
+    def get_message_cache(self) -> list["CachedMessage"]:
+        """Return a snapshot of cached messages without clearing."""
+        return list(self._message_cache)
 
     @property
     def is_connected(self) -> bool:
