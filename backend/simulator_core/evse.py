@@ -64,6 +64,8 @@ class EVSE:
         "battery_capacity_Wh",
         "soc_pct",
         "power_type",
+        "tx_default_power_W",
+        "tx_profile_valid_to",
     )
 
     def __init__(
@@ -87,6 +89,8 @@ class EVSE:
         self.battery_capacity_Wh = 100_000.0
         self.soc_pct = 20.0
         self.power_type = power_type  # "AC" or "DC", propagated from parent Charger
+        self.tx_default_power_W = 7400.0  # Fallback power (W) when no SetChargingProfile received; propagated from Charger config
+        self.tx_profile_valid_to: Optional[datetime] = None  # expiry of the active TxProfile; None = no expiry set
 
     def transition_to(self, new_state: EvseState) -> bool:
         """Validate and perform state transition. Returns True if applied."""
@@ -101,17 +105,24 @@ class EVSE:
         allowed = _VALID_TRANSITIONS.get(self.state)
         return allowed is not None and new_state in allowed
 
-    def set_offered_limit_W(self, limit_W: float) -> None:
-        """Apply power limit from SetChargingProfile (FR-5). CSMS limit is stored as-is for simulation."""
+    def set_offered_limit_W(self, limit_W: float, valid_to: Optional[datetime] = None) -> None:
+        """Apply power limit from SetChargingProfile (FR-5). CSMS limit is stored as-is for simulation.
+        valid_to is the profile expiry; when it passes, get_effective_power_W falls back to tx_default_power_W.
+        """
         self.offered_limit_W = max(0.0, limit_W)
+        self.tx_profile_valid_to = valid_to
 
     def get_effective_power_W(self) -> float:
         """Power for meter: CSMS limit from SetChargingProfile (no cap by max_power for simulation).
         Returns 0 when suspended (SuspendedEV/SuspendedEVSE) so no power is simulated regardless of profile.
+        Falls back to tx_default_power_W when no profile is active or the profile has expired.
         """
         if self.state in (EvseState.SuspendedEV, EvseState.SuspendedEVSE):
             return 0.0
-        return self.offered_limit_W
+        if self.offered_limit_W > 0.0:
+            if self.tx_profile_valid_to is None or datetime.now(timezone.utc) < self.tx_profile_valid_to:
+                return self.offered_limit_W
+        return self.tx_default_power_W
 
     def get_voltage_V(self) -> float:
         """Compute voltage: AC returns fixed 400V grid voltage, DC uses sigmoid OCV model."""

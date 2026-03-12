@@ -41,12 +41,24 @@ from schemas.chargers import (
 )
 from simulator_core.charger import Charger as SimCharger
 from simulator_core.evse import EVSE, EvseState
-from simulator_core.ocpp_client import build_connection_url, connect_charge_point
+from simulator_core.ocpp_client import SimulatorChargePoint, build_connection_url, connect_charge_point
 from simulator_core.store import add as store_add, get_by_id as store_get_by_id, remove as store_remove
 
 LOG = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chargers"])
+
+
+def _make_offline_cp(sim: SimCharger) -> SimulatorChargePoint:
+    """Create a minimal ephemeral SimulatorChargePoint for offline-path invocations.
+
+    Uses __new__ to bypass __init__ (which requires a live WebSocket connection).
+    Only _charger and _transaction_id_counter are needed for the offline paths.
+    """
+    cp: SimulatorChargePoint = SimulatorChargePoint.__new__(SimulatorChargePoint)
+    cp._charger = sim
+    cp._transaction_id_counter = 0
+    return cp
 
 
 def _validate_meter_measurands(measurands_str: str, power_type: str) -> str | None:
@@ -215,6 +227,8 @@ def _sim_charger_to_detail(
         security_profile=security_profile if security_profile in ("none", "basic") else "none",
         basic_auth_password_set=basic_auth_password_set,
         power_type=power_type if power_type in ("AC", "DC") else "DC",
+        offline_mode=c.is_offline_mode(),
+        cached_message_count=len(c.get_message_cache()),
     )
 
 
@@ -342,17 +356,11 @@ async def start_transaction(
     body: StartTransactionRequest,
     db: Session = Depends(get_db),
 ) -> StartTransactionResponse:
-    """Start a charging transaction on an EVSE. Requires charger to be connected to CSMS."""
+    """Start a charging transaction on an EVSE. Requires charger to be connected or in offline mode."""
     sim = _hydrate_charger(db, charge_point_id)
     if sim is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
-    if not sim.is_connected:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Charger not connected to CSMS",
-        )
-    client = getattr(sim, "_ocpp_client", None)
-    if client is None:
+    if not sim.is_connected and not sim.is_offline_mode():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Charger not connected to CSMS",
@@ -372,12 +380,28 @@ async def start_transaction(
     battery_capacity_kwh = float(vehicle.battery_capacity_kwh) if vehicle else 100.0
     start_soc_pct = body.start_soc_pct if body.start_soc_pct is not None else 20.0
     try:
-        result = await client.start_transaction(
-            body.connector_id,
-            body.id_tag,
-            start_soc_pct=start_soc_pct,
-            battery_capacity_kwh=battery_capacity_kwh,
-        )
+        if sim.is_offline_mode():
+            result = await _make_offline_cp(sim)._start_transaction_offline(
+                body.connector_id,
+                body.id_tag,
+                start_soc_pct=start_soc_pct,
+                battery_capacity_kwh=battery_capacity_kwh,
+            )
+        else:
+            client = getattr(sim, "_ocpp_client", None)
+            if client is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Charger not connected to CSMS",
+                )
+            result = await client.start_transaction(
+                body.connector_id,
+                body.id_tag,
+                start_soc_pct=start_soc_pct,
+                battery_capacity_kwh=battery_capacity_kwh,
+            )
+    except HTTPException:
+        raise
     except Exception as e:
         LOG.exception("Start transaction failed")
         raise HTTPException(
@@ -401,22 +425,26 @@ async def stop_transaction(
     body: StopTransactionRequest,
     db: Session = Depends(get_db),
 ) -> None:
-    """Stop the active transaction on an EVSE."""
+    """Stop the active transaction on an EVSE. Works when connected or in offline mode."""
     sim = _hydrate_charger(db, charge_point_id)
     if sim is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
-    if not sim.is_connected:
+    if not sim.is_connected and not sim.is_offline_mode():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Charger not connected to CSMS",
         )
-    client = getattr(sim, "_ocpp_client", None)
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Charger not connected to CSMS",
-        )
-    success = await client.stop_transaction(body.connector_id)
+    if sim.is_offline_mode():
+        # Use an ephemeral client to run the offline stop path (caches StopTransaction)
+        success = await _make_offline_cp(sim).stop_transaction(body.connector_id)
+    else:
+        client = getattr(sim, "_ocpp_client", None)
+        if client is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Charger not connected to CSMS",
+            )
+        success = await client.stop_transaction(body.connector_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -459,6 +487,53 @@ async def disconnect_charger(charge_point_id: str, db: Session = Depends(get_db)
         if conn is not None and getattr(conn, "open", False):
             await conn.close()
         sim.clear_ocpp_client()
+
+
+@router.post("/chargers/{charge_point_id}/go-offline", status_code=status.HTTP_204_NO_CONTENT)
+async def go_offline(charge_point_id: str, db: Session = Depends(get_db)) -> None:
+    """Enter offline mode: close WebSocket, keep meter loop running, cache all outgoing OCPP messages.
+
+    The connect loop stays alive and waits for go-online. Idempotent if already offline.
+    """
+    sim = store_get_by_id(charge_point_id) or _hydrate_charger(db, charge_point_id)
+    if sim is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
+    if sim.is_offline_mode():
+        return  # idempotent
+    sim.set_offline()
+    # Close the WebSocket without setting _stop_connect (so the connect loop stays alive)
+    client = getattr(sim, "_ocpp_client", None)
+    if client is not None:
+        conn = getattr(client, "_connection", None)
+        if conn is not None and getattr(conn, "open", False):
+            await conn.close()
+        sim.clear_ocpp_client()
+
+
+@router.post("/chargers/{charge_point_id}/go-online", status_code=status.HTTP_202_ACCEPTED)
+async def go_online(charge_point_id: str, db: Session = Depends(get_db)) -> dict:
+    """Exit offline mode and reconnect to CSMS. Cached messages are replayed after reconnect.
+
+    Returns immediately; reconnection and replay happen in the background.
+    """
+    sim = store_get_by_id(charge_point_id) or _hydrate_charger(db, charge_point_id)
+    if sim is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charger not found")
+    cached_count = len(sim.get_message_cache())
+    was_offline = sim.is_offline_mode()
+    sim.set_online()
+    # Only start a new connect task if there is no existing loop already running.
+    # When was_offline is True, the existing connect_charge_point loop was waiting in
+    # the offline wait loop and will resume on its own now that set_online() was called.
+    # Starting a second task would cause a duplicate BootNotification.
+    if not sim.is_connected and not was_offline:
+        row = repo_get_charger(db, charge_point_id)
+        if row is not None and row.connection_url:
+            url = build_connection_url(row.connection_url, charge_point_id)
+            basic_auth_password = row.basic_auth_password if row.security_profile == "basic" else None
+            sim.clear_stop_connect()
+            asyncio.create_task(connect_charge_point(sim, url, basic_auth_password=basic_auth_password))
+    return {"status": "going_online", "cached_messages": cached_count}
 
 
 @router.get("/chargers/{charge_point_id}/logs", response_model=list[OCPPLogEntry])
@@ -524,6 +599,11 @@ def update_charger_config(
     sim = store_get_by_id(charge_point_id)
     if sim and isinstance(sim.config, dict):
         sim.config = {**sim.config, **updates}
+        # Propagate TxDefaultPowerW change to all EVSEs immediately
+        if "TxDefaultPowerW" in updates:
+            new_default_w = float(updates["TxDefaultPowerW"])
+            for evse in sim.evses:
+                evse.tx_default_power_W = new_default_w
     if sim is None:
         sim = _hydrate_charger(db, charge_point_id)
     if sim is None:

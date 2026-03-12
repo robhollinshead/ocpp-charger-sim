@@ -42,6 +42,58 @@ async def create_charger(body: ChargerCreate, db: Session = Depends(get_db)):
 3. For each charger that has a CSMS URL and `auto_connect=True`, create an `OcppClient` task
 4. Seed default locations if none exist
 
+## Offline Mode
+
+The simulator supports offline charging — sessions survive network outages, messages are cached, and replayed on reconnect.
+
+### Connectivity State Model
+
+`ConnectivityMode` enum (in `charger.py`):
+- `ONLINE` — normal operation (default)
+- `OFFLINE` — forced offline: WS closed, connect loop waiting, all OCPP sends cached
+
+Set via `charger.set_offline()` / `charger.set_online()`. Independent of `_stop_connect`.
+
+### Key design: `_meter_tasks` lives on `Charger`
+
+Meter tasks are stored in `charger._meter_tasks` (not on `SimulatorChargePoint`). This means tasks survive WS reconnects — the long-lived `Charger` object persists across reconnect cycles, while `SimulatorChargePoint` is re-created on each new connection.
+
+### Message Caching
+
+`CachedMessage` dataclass (in `charger.py`): `message_type`, `payload`, `connector_id`, `local_transaction_id`, `timestamp`.
+
+When offline, `SimulatorChargePoint._send_or_cache()` routes outgoing OCPP calls to `charger.cache_message()` instead of `self.call()`. This intercepts: StatusNotification, StartTransaction, StopTransaction, MeterValues.
+
+### Offline Transactions
+
+Starting a transaction while offline uses `_start_transaction_offline()`:
+- Generates a local negative transaction ID (`-1`, `-2`, …) from `charger.next_offline_transaction_id()`
+- Caches StartTransaction with the local ID
+- EVSE transitions to Charging; meter loop starts normally
+
+### Replay on Reconnect
+
+`replay_cached_messages(charger, cp)` runs in `boot_and_status()` after reconnect:
+1. Sends StatusNotifications (no ID patching needed)
+2. Sends StartTransaction → gets real CSMS transaction_id → builds `tx_id_map` (local → real)
+3. Patches MeterValues and StopTransaction payloads with real IDs before sending
+4. Updates live EVSE `transaction_id` to real ID so subsequent meter ticks use correct ID
+
+### TxDefaultPowerW
+
+Config key `TxDefaultPowerW` (float, default `7400.0` W) provides fallback power when no `SetChargingProfile` has been received. Stored in `charger.config`, propagated to `evse.tx_default_power_W` at init and on config update. Used by `evse.get_effective_power_W()` when `offered_limit_W == 0.0`.
+
+### API Endpoints
+
+- `POST /chargers/{id}/go-offline` (204) — Enter offline mode: close WS, keep meter running, cache sends. Idempotent.
+- `POST /chargers/{id}/go-online` (202) — Exit offline mode: reconnect loop resumes, cached messages replayed. Returns `{status, cached_messages}`.
+
+### Testing
+
+- `tests/unit/test_offline_mode.py` — ConnectivityMode, CachedMessage, TxDefaultPowerW, meter loop caching
+- `tests/unit/test_replay.py` — `replay_cached_messages`, patch helpers, full offline session, tx ID reconciliation
+- `tests/api/test_offline_api.py` — go-offline/go-online endpoints, offline start/stop transaction, TxDefaultPowerW config
+
 ## Testing
 
 See [tests/CLAUDE.md](tests/CLAUDE.md) for full test guidance.

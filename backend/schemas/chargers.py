@@ -74,6 +74,7 @@ class ChargerConfigUpdate(BaseModel):
     LocalAuthListEnabled: bool | None = None
     OCPPAuthorizationEnabled: bool | None = None
     MeterValuesSampledData: str | None = None
+    TxDefaultPowerW: float | None = None
 
 
 class MeterSnapshot(BaseModel):
@@ -149,6 +150,8 @@ class ChargerDetail(BaseModel):
     security_profile: Literal["none", "basic"] = "none"
     basic_auth_password_set: bool = False
     power_type: PowerType = "DC"
+    offline_mode: bool = False
+    cached_message_count: int = 0
 
 
 class OCPPLogEntry(BaseModel):
