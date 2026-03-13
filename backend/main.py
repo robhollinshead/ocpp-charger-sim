@@ -99,7 +99,7 @@ def _load_chargers_from_db() -> None:
                     EVSE(evse_id=e.evse_id, max_power_W=22000.0, power_type=power_type)
                     for e in evse_rows
                 ]
-            config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
+            config = {**DEFAULT_CHARGER_CONFIG, **(row.config if isinstance(row.config, dict) else {})}
             sim = SimCharger(
                 charge_point_id=row.charge_point_id,
                 evses=evses,

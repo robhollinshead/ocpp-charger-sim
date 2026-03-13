@@ -16,6 +16,7 @@ DEFAULT_CHARGER_CONFIG: dict = {
     "AuthorizeRemoteTxRequests": True,
     "LocalAuthListEnabled": True,
     "OCPPAuthorizationEnabled": True,
+    "TxDefaultPowerW": 7400.0,
 }
 
 # Default MeterValuesSampledData per power type.

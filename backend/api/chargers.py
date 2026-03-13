@@ -110,7 +110,7 @@ def _hydrate_charger(db: Session, charge_point_id: str) -> SimCharger | None:
             EVSE(evse_id=e.evse_id, max_power_W=22000.0, power_type=power_type)
             for e in evse_rows
         ]
-    config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
+    config = {**DEFAULT_CHARGER_CONFIG, **(row.config if isinstance(row.config, dict) else {})}
     sim = SimCharger(
         charge_point_id=row.charge_point_id,
         evses=evses,
@@ -305,7 +305,7 @@ def create_charger(
         EVSE(evse_id=i, max_power_W=22000.0, power_type=power_type)
         for i in range(1, body.evse_count + 1)
     ]
-    config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
+    config = {**DEFAULT_CHARGER_CONFIG, **(row.config if isinstance(row.config, dict) else {})}
     sim = SimCharger(
         charge_point_id=row.charge_point_id,
         evses=evses,
@@ -658,7 +658,7 @@ def update_charger(
             basic_auth_password_set=_basic_auth_password_set(row),
             power_type=power_type,
         )
-    config = row.config if isinstance(row.config, dict) and row.config else dict(DEFAULT_CHARGER_CONFIG)
+    config = {**DEFAULT_CHARGER_CONFIG, **(row.config if isinstance(row.config, dict) else {})}
     return _sim_charger_to_detail(
         SimCharger(
             charge_point_id=row.charge_point_id,
