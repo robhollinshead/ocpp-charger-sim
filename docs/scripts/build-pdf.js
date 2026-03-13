@@ -22,7 +22,9 @@ const DOC_FILES = [
   'architecture.md',
   'ocpp-support.md',
   'edge-cases.md',
+  'testing.md',
   'ui-guide.md',
+  'offline-charging.md',
   'out-of-scope.md',
 ];
 
