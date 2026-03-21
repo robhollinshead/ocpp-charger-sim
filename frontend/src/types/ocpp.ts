@@ -183,3 +183,43 @@ export interface ImportResult<T> {
   success: T[];
   failed: { row: unknown; error: string }[];
 }
+
+/** A single period in a charging schedule. */
+export interface ChargingSchedulePeriodResponse {
+  start_period_s: number;
+  limit_W: number;
+  raw_limit: number;
+  raw_unit: 'A' | 'W';
+  number_phases: number | null;
+}
+
+/** A charging profile as returned by the API. */
+export interface ChargingProfileResponse {
+  charging_profile_id: number;
+  connector_id: number;
+  stack_level: number;
+  charging_profile_purpose: 'TxProfile' | 'TxDefaultProfile' | 'ChargePointMaxProfile';
+  charging_profile_kind: 'Absolute' | 'Recurring' | 'Relative';
+  recurrency_kind: 'Daily' | 'Weekly' | null;
+  transaction_id: number | null;
+  valid_from: string | null;
+  valid_to: string | null;
+  start_schedule: string | null;
+  duration_s: number | null;
+  charging_schedule_periods: ChargingSchedulePeriodResponse[];
+  received_at: string;
+  status: 'Active' | 'Scheduled' | 'Expired';
+  current_limit_W: number | null;
+}
+
+/** Evaluated effective charging limit for a connector. */
+export interface EvaluatedLimitResponse {
+  connector_id: number;
+  transaction_id: number | null;
+  limit_W: number | null;
+  effective_W: number;
+  profile_id: number | null;
+  purpose: string | null;
+  stack_level: number | null;
+  capped_by_max_profile: boolean;
+}

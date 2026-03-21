@@ -10,6 +10,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ConfigurationTab } from '@/components/charger/ConfigurationTab';
 import { LogsTab } from '@/components/charger/LogsTab';
 import { TransactionsTab } from '@/components/charger/TransactionsTab';
+import { ProfilesTab } from '@/components/charger/ProfilesTab';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,7 +22,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Settings, FileText, Zap, Plug, Trash2, Link2, Link2Off, Wifi, WifiOff } from 'lucide-react';
+import { Settings, FileText, Zap, Plug, Trash2, Link2, Link2Off, Wifi, WifiOff, BarChart2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function ChargerDetail() {
@@ -243,6 +244,13 @@ export default function ChargerDetail() {
               <Zap className="h-4 w-4" />
               Transactions
             </TabsTrigger>
+            <TabsTrigger
+              value="profiles"
+              className="data-[state=active]:bg-card data-[state=active]:text-foreground gap-2"
+            >
+              <BarChart2 className="h-4 w-4" />
+              Profiles
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="config" className="space-y-6">
@@ -254,6 +262,9 @@ export default function ChargerDetail() {
           </TabsContent>
           <TabsContent value="transactions">
             <TransactionsTab chargePointId={charger.id} locationId={locationId!} />
+          </TabsContent>
+          <TabsContent value="profiles">
+            <ProfilesTab chargePointId={charger.charge_point_id} evses={charger.evses} />
           </TabsContent>
         </Tabs>
       </div>

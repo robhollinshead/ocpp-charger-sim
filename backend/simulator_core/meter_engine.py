@@ -1,7 +1,7 @@
 """Per-EVSE MeterValues engine: asyncio loop, update rules, OCPP payload (ocpp-meter-values.md)."""
 import asyncio
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Awaitable, Callable
+from typing import TYPE_CHECKING, Awaitable, Callable, Optional
 
 from simulator_core.evse import EVSE, EvseState
 
@@ -66,20 +66,17 @@ def build_meter_values_payload(evse: EVSE, measurands: list[str]) -> MeterValues
     }
 
 
-def update_evse_meter(evse: EVSE, dt_s: float) -> None:
+def update_evse_meter(evse: EVSE, dt_s: float, limit_W_override: Optional[float] = None) -> None:
     """
     Update EVSE internal meter state for elapsed time (FR-3).
 
-    For DC chargers:
-        Power from offered_limit_W; current = power / voltage (OCV model).
-
-    For AC chargers:
-        Power from offered_limit_W; current = power / (sqrt(3) * 400V).
-        The offered_limit_W is already in Watts (converted from Amps by SetChargingProfile handler).
+    limit_W_override: evaluated limit from the charging profile engine (Watts).
+    When provided it is passed to get_effective_power_W(); when None, 0 W is used
+    (no profile active).
 
     SoC is always calculated for session end detection, regardless of power type.
     """
-    power_W = evse.get_effective_power_W()
+    power_W = evse.get_effective_power_W(limit_W_override)
     evse.power_W = power_W
     evse.energy_Wh += power_W * (dt_s / 3600.0)
     session_energy_Wh = evse.energy_Wh - evse._initial_energy_Wh
@@ -98,6 +95,8 @@ def update_evse_meter(evse: EVSE, dt_s: float) -> None:
 
 SendMeterValuesCb = Callable[[MeterValuesPayload], Awaitable[None]]
 OnSocFullCb = Callable[[], Awaitable[None]]
+LimitFn = Callable[[], Optional[float]]
+NoProfileCb = Callable[[], Awaitable[None]]
 
 
 async def _metering_loop(
@@ -107,27 +106,44 @@ async def _metering_loop(
     stop_event: asyncio.Event,
     measurands: list[str],
     on_soc_full: OnSocFullCb | None = None,
+    limit_fn: LimitFn | None = None,
+    on_no_profile: NoProfileCb | None = None,
 ) -> None:
     """
     Single EVSE metering loop. Runs while Charging or SuspendedEV and transaction active.
     Stops when stop_event is set or state is neither Charging nor SuspendedEV.
-    When SoC reaches 100% and state is Charging, calls on_soc_full once (transition to SuspendedEV);
-    loop continues with 0 effective power.
+
+    limit_fn: called each tick to get the current profile limit (Watts) or None.
+    on_no_profile: called once when limit_fn() returns None while EVSE is Charging;
+        expected to transition the EVSE to SuspendedEVSE, causing the loop to exit.
+    on_soc_full: called once when SoC reaches 100% while Charging.
     """
+    _no_profile_triggered = False
     while (
         not stop_event.is_set()
         and evse.state in (EvseState.Charging, EvseState.SuspendedEV)
         and evse.transaction_id is not None
     ):
-        update_evse_meter(evse, interval_s)
-        payload = build_meter_values_payload(evse, measurands)
-        await send_cb(payload)
-        if (
-            evse.soc_pct >= 100.0
-            and evse.state == EvseState.Charging
-            and on_soc_full is not None
-        ):
-            await on_soc_full()
+        override: Optional[float] = limit_fn() if limit_fn is not None else None
+
+        # Profile-based suspension: no valid profile while actively Charging → SuspendedEVSE
+        if limit_fn is not None and override is None and evse.state == EvseState.Charging:
+            if not _no_profile_triggered:
+                _no_profile_triggered = True
+                if on_no_profile is not None:
+                    await on_no_profile()
+            # Loop exits on next iteration because on_no_profile transitions to SuspendedEVSE
+        else:
+            _no_profile_triggered = False
+            update_evse_meter(evse, interval_s, override)
+            payload = build_meter_values_payload(evse, measurands)
+            await send_cb(payload)
+            if (
+                evse.soc_pct >= 100.0
+                and evse.state == EvseState.Charging
+                and on_soc_full is not None
+            ):
+                await on_soc_full()
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval_s)
         except asyncio.TimeoutError:
@@ -140,15 +156,26 @@ def start_metering_loop(
     measurands: list[str],
     interval_s: float = 10.0,
     on_soc_full: OnSocFullCb | None = None,
+    limit_fn: LimitFn | None = None,
+    on_no_profile: NoProfileCb | None = None,
 ) -> tuple[asyncio.Task, asyncio.Event]:
     """
     Start one asyncio task per EVSE (FR-1). Callback receives OCPP-shaped payload.
     Returns (task, stop_event). Cancel by setting stop_event or cancelling the task.
-    Optional on_soc_full is called once when SoC reaches 100% while Charging (e.g. to transition to SuspendedEV).
+
+    limit_fn: optional callable returning the current profile limit in Watts or None.
+    on_no_profile: optional async callable invoked once when limit_fn() returns None
+        while EVSE is Charging (should transition EVSE to SuspendedEVSE).
+    on_soc_full: optional async callable invoked once when SoC reaches 100%.
     measurands: list of MeterValuesSampledData tokens to include in each MeterValues message.
     """
     stop_event = asyncio.Event()
     task = asyncio.create_task(
-        _metering_loop(evse, send_cb, interval_s, stop_event, measurands, on_soc_full)
+        _metering_loop(
+            evse, send_cb, interval_s, stop_event, measurands,
+            on_soc_full=on_soc_full,
+            limit_fn=limit_fn,
+            on_no_profile=on_no_profile,
+        )
     )
     return task, stop_event

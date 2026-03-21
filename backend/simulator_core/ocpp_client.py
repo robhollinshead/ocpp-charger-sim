@@ -16,6 +16,7 @@ from ocpp.v16.enums import (
     ChargePointErrorCode,
     ChargePointStatus,
     ChargingProfileStatus,
+    ClearChargingProfileStatus,
     ConfigurationStatus,
     Measurand,
     Phase,
@@ -395,50 +396,191 @@ class SimulatorChargePoint(ChargePoint):
         cs_charging_profiles: dict,
         **kwargs: Any,
     ) -> call_result.SetChargingProfilePayload:
-        """Extract power limit and apply to EVSE (FR-5).
+        """Store the full ChargingProfile and evaluate/apply limits.
 
-        When chargingRateUnit is 'A' (Amps):
-        - AC chargers: Convert using 3-phase formula P = sqrt(3) * 400V * I
-        - DC chargers: Convert using pack voltage at 50% SoC
+        Profiles are stored per charger with full OCPP 1.6 structure.
+        All period limits are normalised to Watts at ingest.
+        Any SuspendedEVSE connectors that now have a valid profile are resumed.
         """
+        from simulator_core.charging_profile import (
+            ChargingProfile,
+            ChargingSchedulePeriod,
+            normalize_limit_to_W,
+            save_profiles,
+        )
         if not self._charger:
             return call_result.SetChargingProfilePayload(status=ChargingProfileStatus.rejected)
-        evse = self._charger.get_evse(connector_id)
-        if not evse:
-            return call_result.SetChargingProfilePayload(status=ChargingProfileStatus.rejected)
         try:
-            # cs_charging_profiles: dict with charging_schedule, charging_schedule_period
-            schedule = cs_charging_profiles.get("charging_schedule") or cs_charging_profiles.get("chargingSchedule")
-            if not schedule:
+            raw = cs_charging_profiles
+            schedule = raw.get("charging_schedule") or raw.get("chargingSchedule") or {}
+            periods_raw = (
+                schedule.get("charging_schedule_period")
+                or schedule.get("chargingSchedulePeriod")
+                or []
+            )
+            if not periods_raw:
                 return call_result.SetChargingProfilePayload(status=ChargingProfileStatus.rejected)
-            periods = schedule.get("charging_schedule_period") or schedule.get("chargingSchedulePeriod") or []
-            if not periods:
-                return call_result.SetChargingProfilePayload(status=ChargingProfileStatus.rejected)
-            first = periods[0]
-            limit = float(first.get("limit", 0.0))
+
             unit = (schedule.get("charging_rate_unit") or schedule.get("chargingRateUnit") or "W").upper()
-            if unit == "A":
-                power_type = getattr(self._charger, "power_type", "DC")
-                if power_type == "AC":
-                    # AC: P = sqrt(3) * V * I for 3-phase at 400V line-to-line
-                    limit = limit * SQRT3 * AC_GRID_VOLTAGE_V
-                else:
-                    # DC: Use pack voltage at 50% SoC for conversion
-                    limit = limit * get_pack_voltage_V(50.0)
-            valid_to_str = cs_charging_profiles.get("valid_to") or cs_charging_profiles.get("validTo")
-            valid_to: Optional[datetime] = None
-            if valid_to_str:
+            power_type = getattr(self._charger, "power_type", "DC")
+
+            periods = [
+                ChargingSchedulePeriod(
+                    start_period_s=int(p.get("start_period") or p.get("startPeriod") or 0),
+                    limit_W=normalize_limit_to_W(float(p.get("limit", 0)), unit, power_type),
+                    raw_limit=float(p.get("limit", 0)),
+                    raw_unit=unit,
+                    number_phases=p.get("number_phases") or p.get("numberOfPhases"),
+                )
+                for p in periods_raw
+            ]
+
+            def _get(key_snake: str, key_camel: str) -> Any:
+                return raw.get(key_snake) or raw.get(key_camel)
+
+            def _parse_dt(s: Any) -> Optional[datetime]:
+                if s is None:
+                    return None
                 try:
-                    valid_to = datetime.fromisoformat(valid_to_str.replace("Z", "+00:00"))
-                    if valid_to.tzinfo is None:
-                        valid_to = valid_to.replace(tzinfo=timezone.utc)
-                except ValueError:
-                    pass
-            evse.set_offered_limit_W(limit, valid_to=valid_to)
+                    dt = datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+                    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+                except (ValueError, TypeError):
+                    return None
+
+            profile = ChargingProfile(
+                charging_profile_id=int(_get("charging_profile_id", "chargingProfileId") or 0),
+                connector_id=connector_id,
+                stack_level=int(_get("stack_level", "stackLevel") or 0),
+                charging_profile_purpose=str(_get("charging_profile_purpose", "chargingProfilePurpose") or "TxProfile"),
+                charging_profile_kind=str(_get("charging_profile_kind", "chargingProfileKind") or "Absolute"),
+                recurrency_kind=_get("recurrency_kind", "recurrencyKind"),
+                transaction_id=_get("transaction_id", "transactionId"),
+                valid_from=_parse_dt(_get("valid_from", "validFrom")),
+                valid_to=_parse_dt(_get("valid_to", "validTo")),
+                start_schedule=_parse_dt(
+                    schedule.get("start_schedule") or schedule.get("startSchedule")
+                ),
+                duration_s=schedule.get("duration"),
+                charging_schedule_periods=periods,
+            )
+
+            # Replace any existing profile with the same (id, connector_id)
+            existing = [
+                p for p in self._charger._charging_profiles
+                if not (
+                    p.charging_profile_id == profile.charging_profile_id
+                    and p.connector_id == profile.connector_id
+                )
+            ]
+            existing.append(profile)
+            self._charger._charging_profiles = existing
+
+            cp_id = self._charger.charge_point_id
+            profiles_copy = list(existing)
+            asyncio.create_task(asyncio.to_thread(save_profiles, cp_id, profiles_copy))
+
+            # Resume any SuspendedEVSE connectors that now have a valid profile
+            await self._resume_evse_if_profile_available(connector_id)
+            if connector_id == 0:
+                for evse in self._charger.evses:
+                    await self._resume_evse_if_profile_available(evse.evse_id)
+
             return call_result.SetChargingProfilePayload(status=ChargingProfileStatus.accepted)
-        except (TypeError, KeyError, ValueError) as e:
-            LOG.warning("SetChargingProfile parse error: %s", e)
+        except Exception as e:
+            LOG.warning("SetChargingProfile error: %s", e)
             return call_result.SetChargingProfilePayload(status=ChargingProfileStatus.rejected)
+
+    @on(Action.ClearChargingProfile)
+    async def on_clear_charging_profile(self, **kwargs: Any) -> call_result.ClearChargingProfilePayload:
+        """Remove charging profiles matching the provided criteria.
+
+        All criteria are optional; when all are None all profiles are removed.
+        Returns accepted if any profiles were removed, unknown if none matched.
+        """
+        from simulator_core.charging_profile import profile_matches_clear, save_profiles
+
+        if not self._charger:
+            return call_result.ClearChargingProfilePayload(status=ClearChargingProfileStatus.unknown)
+
+        def _kw(*keys):
+            for k in keys:
+                v = kwargs.get(k)
+                if v is not None:
+                    return v
+            return None
+
+        profile_id = _kw("id", "charging_profile_id")
+        conn_id = _kw("connector_id", "connectorId")
+        purpose = _kw("charging_profile_purpose", "chargingProfilePurpose")
+        stack_level = _kw("stack_level", "stackLevel")
+        if profile_id is not None:
+            profile_id = int(profile_id)
+        if conn_id is not None:
+            conn_id = int(conn_id)
+        if stack_level is not None:
+            stack_level = int(stack_level)
+
+        before = len(self._charger._charging_profiles)
+        remaining = [
+            p for p in self._charger._charging_profiles
+            if not profile_matches_clear(p, profile_id, conn_id, purpose, stack_level)
+        ]
+        self._charger._charging_profiles = remaining
+        removed = before - len(remaining)
+
+        if removed > 0:
+            cp_id = self._charger.charge_point_id
+            profiles_copy = list(remaining)
+            asyncio.create_task(asyncio.to_thread(save_profiles, cp_id, profiles_copy))
+            return call_result.ClearChargingProfilePayload(status=ClearChargingProfileStatus.accepted)
+        return call_result.ClearChargingProfilePayload(status=ClearChargingProfileStatus.unknown)
+
+    async def _resume_evse_if_profile_available(self, connector_id: int) -> None:
+        """Resume a SuspendedEVSE connector if a valid charging profile now exists for it."""
+        charger = self._charger
+        if charger is None:
+            return
+        evse = charger.get_evse(connector_id)
+        if evse is None or evse.transaction_id is None:
+            return
+        if evse.state != EvseState.SuspendedEVSE:
+            return
+        if connector_id in charger._meter_tasks:
+            return  # meter loop already running
+        if charger.get_limit_W(connector_id) is None:
+            return  # still no valid profile
+
+        # Resume: Charging state + new metering loop
+        evse.transition_to(EvseState.Charging)
+        await self.send_status_notification(connector_id, EvseState.Charging)
+
+        send_meter_values = self._make_send_meter_values(evse, connector_id, charger)
+        limit_fn = lambda: charger.get_limit_W(connector_id)  # noqa: E731
+
+        async def on_soc_full_resume() -> None:
+            evse.transition_to(EvseState.SuspendedEV)
+            active_cp = charger._ocpp_client
+            cp = active_cp if active_cp is not None else self
+            await cp.send_status_notification(connector_id, EvseState.SuspendedEV)
+
+        async def on_no_profile_resume() -> None:
+            evse.transition_to(EvseState.SuspendedEVSE)
+            active_cp = charger._ocpp_client
+            cp = active_cp if active_cp is not None else self
+            await cp.send_status_notification(connector_id, EvseState.SuspendedEVSE)
+            charger._meter_tasks.pop(connector_id, None)
+
+        from simulator_core.meter_engine import start_metering_loop as _start_loop
+        task, stop_event = _start_loop(
+            evse,
+            send_meter_values,
+            charger.get_meter_measurands(),
+            charger.get_meter_interval_s(),
+            on_soc_full=on_soc_full_resume,
+            limit_fn=limit_fn,
+            on_no_profile=on_no_profile_resume,
+        )
+        charger._meter_tasks[connector_id] = (task, stop_event)
 
     @on(Action.RemoteStartTransaction)
     async def on_remote_start_transaction(
@@ -610,10 +752,21 @@ class SimulatorChargePoint(ChargePoint):
             cp = active_cp if active_cp is not None else self
             await cp.send_status_notification(connector_id, EvseState.SuspendedEV)
 
+        async def on_no_profile() -> None:
+            evse.transition_to(EvseState.SuspendedEVSE)
+            active_cp = charger._ocpp_client
+            cp = active_cp if active_cp is not None else self
+            await cp.send_status_notification(connector_id, EvseState.SuspendedEVSE)
+            charger._meter_tasks.pop(connector_id, None)
+
         interval_s = charger.get_meter_interval_s()
         measurands = charger.get_meter_measurands()
+        limit_fn = lambda: charger.get_limit_W(connector_id)  # noqa: E731
         task, stop_event = start_metering_loop(
-            evse, send_meter_values, measurands, interval_s, on_soc_full=on_soc_full
+            evse, send_meter_values, measurands, interval_s,
+            on_soc_full=on_soc_full,
+            limit_fn=limit_fn,
+            on_no_profile=on_no_profile,
         )
         # Store on Charger (not self) so tasks survive WS reconnects
         self._charger._meter_tasks[connector_id] = (task, stop_event)
@@ -729,10 +882,21 @@ class SimulatorChargePoint(ChargePoint):
             cp = active_cp if active_cp is not None else self
             await cp.send_status_notification(connector_id, EvseState.SuspendedEV)
 
+        async def on_no_profile() -> None:
+            evse.transition_to(EvseState.SuspendedEVSE)
+            active_cp = charger._ocpp_client
+            cp = active_cp if active_cp is not None else self
+            await cp.send_status_notification(connector_id, EvseState.SuspendedEVSE)
+            charger._meter_tasks.pop(connector_id, None)
+
         interval_s = charger.get_meter_interval_s()
         measurands = charger.get_meter_measurands()
+        limit_fn = lambda: charger.get_limit_W(connector_id)  # noqa: E731
         task, stop_event = start_metering_loop(
-            evse, send_meter_values, measurands, interval_s, on_soc_full=on_soc_full
+            evse, send_meter_values, measurands, interval_s,
+            on_soc_full=on_soc_full,
+            limit_fn=limit_fn,
+            on_no_profile=on_no_profile,
         )
         charger._meter_tasks[connector_id] = (task, stop_event)
         return local_tx_id

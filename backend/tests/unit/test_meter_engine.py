@@ -81,8 +81,7 @@ def test_update_evse_meter():
     evse.energy_Wh = 0.0
     evse.start_soc_pct = 20.0
     evse.battery_capacity_Wh = 100_000.0
-    evse.offered_limit_W = 11000.0
-    update_evse_meter(evse, dt_s=3600.0)
+    update_evse_meter(evse, dt_s=3600.0, limit_W_override=11000.0)
     assert evse.power_W == 11000.0
     assert evse.energy_Wh > 0
     assert evse.current_A > 0
@@ -95,8 +94,7 @@ def test_update_evse_meter_voltage_from_soc():
     evse.state = EvseState.Charging
     evse.transaction_id = 1
     evse.soc_pct = 20.0
-    evse.offered_limit_W = 11000.0
-    update_evse_meter(evse, dt_s=60.0)
+    update_evse_meter(evse, dt_s=60.0, limit_W_override=11000.0)
     expected_voltage = get_pack_voltage_V(evse.soc_pct)
     assert expected_voltage > 0
     expected_current = 11000.0 / expected_voltage
@@ -168,8 +166,7 @@ def test_update_evse_meter_ac_current_calculation():
     evse.energy_Wh = 0.0
     evse.start_soc_pct = 20.0
     evse.battery_capacity_Wh = 100_000.0
-    evse.offered_limit_W = 22000.0  # 22 kW 3-phase AC
-    update_evse_meter(evse, dt_s=3600.0)
+    update_evse_meter(evse, dt_s=3600.0, limit_W_override=22000.0)
     # Expected current: 22000 / (sqrt(3) * 400) ≈ 31.75 A
     expected_current = 22000.0 / (SQRT3 * AC_GRID_VOLTAGE_V)
     assert abs(evse.current_A - expected_current) < 0.01
@@ -211,12 +208,11 @@ def test_get_effective_power_w_zero_when_suspended_evse():
     assert evse.get_effective_power_W() == 0.0
 
 
-def test_get_effective_power_w_returns_offered_when_charging():
-    """get_effective_power_W returns offered_limit_W when state is Charging."""
+def test_get_effective_power_w_returns_override_when_charging():
+    """get_effective_power_W returns limit_W_override when state is Charging."""
     evse = EVSE(evse_id=1)
     evse.state = EvseState.Charging
-    evse.offered_limit_W = 11000.0
-    assert evse.get_effective_power_W() == 11000.0
+    assert evse.get_effective_power_W(limit_W_override=11000.0) == 11000.0
 
 
 def test_evse_ac_power_conversion():
@@ -271,7 +267,6 @@ async def test_start_metering_loop_calls_on_soc_full_once_and_continues_with_zer
     evse.energy_Wh = 990.0
     evse.start_soc_pct = 99.0
     evse.battery_capacity_Wh = 1000.0
-    evse.offered_limit_W = 40000.0  # one 1s tick adds ~11.1 Wh -> 100% SoC
     received = []
     on_soc_full_called = []
 
@@ -283,7 +278,8 @@ async def test_start_metering_loop_calls_on_soc_full_once_and_continues_with_zer
         evse.transition_to(EvseState.SuspendedEV)
 
     task, stop_event = start_metering_loop(
-        evse, send_cb, interval_s=1.0, measurands=DC_MEASURANDS, on_soc_full=on_soc_full
+        evse, send_cb, interval_s=1.0, measurands=DC_MEASURANDS, on_soc_full=on_soc_full,
+        limit_fn=lambda: 40000.0,
     )
     await asyncio.sleep(3.5)  # allow a few ticks: first hits 100% and calls on_soc_full, then more with 0 power
     stop_event.set()
@@ -306,13 +302,14 @@ async def test_start_metering_loop_without_on_soc_full_continues_at_100_soc():
     evse.energy_Wh = 990.0
     evse.start_soc_pct = 99.0
     evse.battery_capacity_Wh = 1000.0
-    evse.offered_limit_W = 40000.0
     received = []
 
     async def send_cb(payload):
         received.append(payload)
 
-    task, stop_event = start_metering_loop(evse, send_cb, interval_s=1.0, measurands=DC_MEASURANDS)
+    task, stop_event = start_metering_loop(
+        evse, send_cb, interval_s=1.0, measurands=DC_MEASURANDS, limit_fn=lambda: 40000.0,
+    )
     await asyncio.sleep(2.5)
     stop_event.set()
     await asyncio.wait_for(task, timeout=2.0)
