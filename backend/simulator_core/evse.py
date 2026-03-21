@@ -112,17 +112,18 @@ class EVSE:
         self.offered_limit_W = max(0.0, limit_W)
         self.tx_profile_valid_to = valid_to
 
-    def get_effective_power_W(self) -> float:
-        """Power for meter: CSMS limit from SetChargingProfile (no cap by max_power for simulation).
-        Returns 0 when suspended (SuspendedEV/SuspendedEVSE) so no power is simulated regardless of profile.
-        Falls back to tx_default_power_W when no profile is active or the profile has expired.
+    def get_effective_power_W(self, limit_W_override: float | None = None) -> float:
+        """Power for meter.
+
+        Returns 0 when suspended (SuspendedEV/SuspendedEVSE).
+        Uses limit_W_override when provided (from the profile evaluator).
+        Returns 0 when no override is provided and no profile is active.
         """
         if self.state in (EvseState.SuspendedEV, EvseState.SuspendedEVSE):
             return 0.0
-        if self.offered_limit_W > 0.0:
-            if self.tx_profile_valid_to is None or datetime.now(timezone.utc) < self.tx_profile_valid_to:
-                return self.offered_limit_W
-        return self.tx_default_power_W
+        if limit_W_override is not None:
+            return max(0.0, limit_W_override)
+        return 0.0
 
     def get_voltage_V(self) -> float:
         """Compute voltage: AC returns fixed 400V grid voltage, DC uses sigmoid OCV model."""

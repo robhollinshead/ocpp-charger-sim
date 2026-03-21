@@ -64,6 +64,7 @@ class Charger:
         "_message_cache",
         "_offline_tx_counter",
         "_meter_tasks",
+        "_charging_profiles",
     )
 
     def __init__(
@@ -101,6 +102,7 @@ class Charger:
         self._message_cache: deque[CachedMessage] = deque(maxlen=_MAX_CACHE_SIZE)  # Bounded FIFO queue; oldest dropped if full
         self._offline_tx_counter: int = 0  # Counts down: 0, -1, -2, ... for offline transaction IDs
         self._meter_tasks: dict[int, Any] = {}  # connector_id -> (task, stop_event); lives on Charger so it survives reconnects
+        self._charging_profiles: list[Any] = []  # list[ChargingProfile]; populated by profile store on startup
         # Propagate power_type and TxDefaultPowerW to EVSEs
         tx_default_w = self.get_tx_default_power_w()
         for evse in self.evses:
@@ -254,3 +256,24 @@ class Charger:
     def clear_ocpp_client(self) -> None:
         """Detach OCPP client after disconnect."""
         self._ocpp_client = None
+
+    def get_limit_W(self, connector_id: int) -> Optional[float]:
+        """Evaluate charging profiles for the given connector and return the limit in Watts.
+
+        Returns None when no valid profile applies — the caller should treat this as
+        'no power / transition to SuspendedEVSE'.
+        """
+        from simulator_core.charging_profile import evaluate_profiles
+        now = datetime.now(timezone.utc)
+        evse = self.get_evse(connector_id)
+        tx_id = evse.transaction_id if evse is not None else None
+        tx_start: Optional[datetime] = None
+        if evse is not None and evse.session_start_time is not None:
+            try:
+                tx_start = datetime.fromisoformat(
+                    evse.session_start_time.replace("Z", "+00:00")
+                )
+            except ValueError:
+                pass
+        result = evaluate_profiles(self._charging_profiles, now, connector_id, tx_id, tx_start)
+        return result.limit_W if result is not None else None

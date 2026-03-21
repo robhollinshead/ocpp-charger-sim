@@ -133,28 +133,25 @@ def test_evse_default_tx_power_w_is_7400():
     assert evse.tx_default_power_W == 7400.0
 
 
-def test_get_effective_power_w_uses_default_when_no_profile():
+def test_get_effective_power_w_no_override_returns_zero():
+    """Without a limit_W_override (no active profile), no power is delivered."""
     evse = EVSE(evse_id=1)
     evse.state = EvseState.Charging
-    evse.offered_limit_W = 0.0
-    evse.tx_default_power_W = 7400.0
-    assert evse.get_effective_power_W() == 7400.0
+    assert evse.get_effective_power_W() == 0.0
 
 
-def test_get_effective_power_w_profile_takes_precedence():
+def test_get_effective_power_w_override_used_when_charging():
+    """limit_W_override is used directly when EVSE is Charging."""
     evse = EVSE(evse_id=1)
     evse.state = EvseState.Charging
-    evse.offered_limit_W = 22000.0
-    evse.tx_default_power_W = 7400.0
-    assert evse.get_effective_power_W() == 22000.0
+    assert evse.get_effective_power_W(limit_W_override=22000.0) == 22000.0
 
 
-def test_get_effective_power_w_custom_default():
+def test_get_effective_power_w_override_ignored_when_suspended():
+    """limit_W_override is ignored when EVSE is suspended."""
     evse = EVSE(evse_id=1)
-    evse.state = EvseState.Charging
-    evse.offered_limit_W = 0.0
-    evse.tx_default_power_W = 11000.0
-    assert evse.get_effective_power_W() == 11000.0
+    evse.state = EvseState.SuspendedEVSE
+    assert evse.get_effective_power_W(limit_W_override=22000.0) == 0.0
 
 
 def test_get_effective_power_w_suspended_returns_zero():
@@ -195,8 +192,6 @@ async def test_meter_loop_continues_and_caches_when_offline():
     evse = EVSE(evse_id=1)
     evse.state = EvseState.Charging
     evse.transaction_id = -1
-    evse.offered_limit_W = 0.0
-    evse.tx_default_power_W = 7400.0
     evse.start_transaction(-1, "TEST_TAG", start_soc_pct=20.0, battery_capacity_wh=100.0)
 
     charger = _make_charger()
@@ -214,7 +209,8 @@ async def test_meter_loop_continues_and_caches_when_offline():
         )
 
     task, stop_event = start_metering_loop(
-        evse, send_cb, ["Energy.Active.Import.Register", "Power.Active.Import"], interval_s=0.05
+        evse, send_cb, ["Energy.Active.Import.Register", "Power.Active.Import"], interval_s=0.05,
+        limit_fn=lambda: 7400.0,
     )
     # Allow at least 2 meter ticks
     await asyncio.sleep(0.15)
@@ -232,13 +228,11 @@ async def test_meter_loop_continues_and_caches_when_offline():
     assert evse.energy_Wh > 0.0
 
 
-async def test_meter_loop_uses_tx_default_power_when_no_profile():
-    """When no charging profile is set (offered_limit_W == 0), tx_default_power_W is used."""
+async def test_meter_loop_without_limit_fn_delivers_no_power():
+    """Without a limit_fn (no charging profile), the meter loop delivers zero power."""
     evse = EVSE(evse_id=1)
     evse.state = EvseState.Charging
     evse.transaction_id = 1
-    evse.offered_limit_W = 0.0
-    evse.tx_default_power_W = 7400.0
     evse.start_transaction(1, "TAG", start_soc_pct=20.0, battery_capacity_wh=100.0)
 
     sent = []
@@ -258,5 +252,5 @@ async def test_meter_loop_uses_tx_default_power_when_no_profile():
         pass
 
     assert len(sent) >= 1
-    # Power should reflect the default (7400 W), not 0
-    assert evse.power_W == pytest.approx(7400.0, rel=0.01)
+    # No profile → no power delivered
+    assert evse.power_W == pytest.approx(0.0)

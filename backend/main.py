@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from db import SessionLocal
 from api.chargers import router as chargers_router
+from api.charging_profiles import router as charging_profiles_router
 from api.locations import router as locations_router
 from api.routes import router
 from api.import_api import router as import_router
@@ -29,6 +30,7 @@ from repositories.charger_repository import (
 from repositories.location_repository import count_locations, create_location as repo_create_location
 from schemas.chargers import DEFAULT_CHARGER_CONFIG
 from schemas.health import HealthResponse
+from simulator_core.charging_profile import load_profiles
 from simulator_core.charger import Charger as SimCharger
 from simulator_core.evse import EVSE
 from simulator_core.store import add as store_add, seed_default
@@ -51,6 +53,7 @@ app.add_middleware(
 app.include_router(router, prefix="/api")
 app.include_router(locations_router, prefix="/api")
 app.include_router(chargers_router, prefix="/api")
+app.include_router(charging_profiles_router, prefix="/api")
 app.include_router(vehicles_router, prefix="/api")
 app.include_router(import_router, prefix="/api")
 app.include_router(scenarios_router, prefix="/api")
@@ -113,6 +116,7 @@ def _load_chargers_from_db() -> None:
                 firmware_version=row.firmware_version or "2.4.1",
                 power_type=power_type,
             )
+            sim._charging_profiles = load_profiles(row.charge_point_id)
             store_add(sim)
     finally:
         db.close()

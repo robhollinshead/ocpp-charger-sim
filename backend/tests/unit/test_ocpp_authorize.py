@@ -230,8 +230,8 @@ async def test_soc_full_transitions_to_suspended_ev_and_meter_values_continue(mo
     async def mock_call(req):
         return next(call_responses)
 
-    def capture_metering_loop(evse, send_cb, interval_s, power_type, on_soc_full=None):
-        captured_on_soc_full.append(on_soc_full)
+    def capture_metering_loop(evse, send_cb, measurands, interval_s, **kwargs):
+        captured_on_soc_full.append(kwargs.get("on_soc_full"))
         meter_task = asyncio.create_task(_dummy_meter_task())
         return (meter_task, asyncio.Event())
 
