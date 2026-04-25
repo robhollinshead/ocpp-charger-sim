@@ -332,3 +332,47 @@ async def test_profile_arrival_resumes_suspended_evse():
 
     # The EVSE should have been transitioned back to Charging
     assert evse.state == EvseState.Charging
+
+
+# ---------------------------------------------------------------------------
+# Deduplication regression — same profileId, different purpose (Bug fix)
+# ---------------------------------------------------------------------------
+
+
+async def test_set_same_profile_id_different_purpose_both_stored():
+    """TxDefaultProfile and TxProfile with the same chargingProfileId must coexist.
+
+    Regression: previously TxProfile (profileId=1) would overwrite TxDefaultProfile
+    (profileId=1) because the dedup key was (id, connector_id) without purpose.
+    After the fix the key is (id, connector_id, purpose) so both are stored.
+    """
+    charger = _make_charger()
+    cp = _make_cp(charger)
+    with patch("asyncio.create_task"):
+        await cp.on_set_charging_profile(*_set_profile_payload(
+            profile_id=1, connector_id=1, purpose="TxDefaultProfile", limit=11000.0,
+        ))
+        await cp.on_set_charging_profile(*_set_profile_payload(
+            profile_id=1, connector_id=1, purpose="TxProfile", limit=150000.0,
+        ))
+
+    purposes = {p.charging_profile_purpose for p in charger._charging_profiles}
+    assert len(charger._charging_profiles) == 2
+    assert "TxDefaultProfile" in purposes
+    assert "TxProfile" in purposes
+
+
+async def test_set_same_profile_id_same_purpose_replaces():
+    """Same (id, connector_id, purpose) → replacement, not accumulation."""
+    charger = _make_charger()
+    cp = _make_cp(charger)
+    with patch("asyncio.create_task"):
+        await cp.on_set_charging_profile(*_set_profile_payload(
+            profile_id=1, connector_id=1, purpose="TxDefaultProfile", limit=11000.0,
+        ))
+        await cp.on_set_charging_profile(*_set_profile_payload(
+            profile_id=1, connector_id=1, purpose="TxDefaultProfile", limit=7400.0,
+        ))
+
+    assert len(charger._charging_profiles) == 1
+    assert charger._charging_profiles[0].charging_schedule_periods[0].limit_W == 7400.0

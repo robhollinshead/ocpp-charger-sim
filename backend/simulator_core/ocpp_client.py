@@ -464,12 +464,15 @@ class SimulatorChargePoint(ChargePoint):
                 charging_schedule_periods=periods,
             )
 
-            # Replace any existing profile with the same (id, connector_id)
+            # Replace any existing profile with the same (id, connector_id, purpose).
+            # Purpose is included so TxDefaultProfile and TxProfile can coexist
+            # even when a CSMS reuses the same chargingProfileId across purposes.
             existing = [
                 p for p in self._charger._charging_profiles
                 if not (
                     p.charging_profile_id == profile.charging_profile_id
                     and p.connector_id == profile.connector_id
+                    and p.charging_profile_purpose == profile.charging_profile_purpose
                 )
             ]
             existing.append(profile)
