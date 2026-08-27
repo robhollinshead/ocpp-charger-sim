@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, call
 
 import pytest
 
 from simulator_core.evse import EvseState
 from simulator_core.scenario_engine import (
     ScenarioRun,
+    _random_soc,
     clear_all,
     clear_scenario,
     get_active_scenario,
@@ -384,3 +385,128 @@ class TestScenarioStore:
 
     def test_get_returns_none_when_absent(self):
         assert get_active_scenario("nonexistent") is None
+
+
+# ---------------------------------------------------------------------------
+# Tests: num_vehicles cap
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestNumVehiclesCap:
+    async def test_num_vehicles_caps_pairs(self):
+        """num_vehicles=2 with 5 EVSEs + 5 vehicles → only 2 pairs scheduled."""
+        evses = [_make_evse(i) for i in range(1, 6)]
+        sim = _make_sim("CP-1", "loc-1", evses)
+        vehicles = [_make_vehicle(f"tag-{i}") for i in range(1, 6)]
+        charger_rows = [_make_row("CP-1")]
+
+        no_sleep = AsyncMock()
+
+        with patch("simulator_core.scenario_engine.store") as mock_store:
+            mock_store.get_all.return_value = [sim]
+            run = await run_rush_period(
+                "loc-1", 5, charger_rows, vehicles, num_vehicles=2, sleep_fn=no_sleep
+            )
+
+        assert run.total_pairs == 2
+        assert run.completed_pairs == 2
+        assert sim._ocpp_client.start_transaction.call_count == 2
+
+    async def test_num_vehicles_larger_than_available_uses_all(self):
+        """num_vehicles=10 with only 3 EVSEs → still capped at 3 (no error)."""
+        evses = [_make_evse(i) for i in range(1, 4)]
+        sim = _make_sim("CP-1", "loc-1", evses)
+        vehicles = [_make_vehicle(f"tag-{i}") for i in range(1, 6)]
+        charger_rows = [_make_row("CP-1")]
+
+        no_sleep = AsyncMock()
+
+        with patch("simulator_core.scenario_engine.store") as mock_store:
+            mock_store.get_all.return_value = [sim]
+            run = await run_rush_period(
+                "loc-1", 3, charger_rows, vehicles, num_vehicles=10, sleep_fn=no_sleep
+            )
+
+        assert run.total_pairs == 3
+        assert run.completed_pairs == 3
+
+    async def test_num_vehicles_none_uses_all_available(self):
+        """num_vehicles=None (default) uses all available pairs."""
+        evses = [_make_evse(i) for i in range(1, 4)]
+        sim = _make_sim("CP-1", "loc-1", evses)
+        vehicles = [_make_vehicle(f"tag-{i}") for i in range(1, 4)]
+        charger_rows = [_make_row("CP-1")]
+
+        no_sleep = AsyncMock()
+
+        with patch("simulator_core.scenario_engine.store") as mock_store:
+            mock_store.get_all.return_value = [sim]
+            run = await run_rush_period(
+                "loc-1", 3, charger_rows, vehicles, num_vehicles=None, sleep_fn=no_sleep
+            )
+
+        assert run.total_pairs == 3
+        assert run.completed_pairs == 3
+
+
+# ---------------------------------------------------------------------------
+# Tests: SoC randomisation
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestRandomSoc:
+    def test_random_soc_within_window(self):
+        """_random_soc returns a value within ±5 of midpoint."""
+        for midpoint in (20.0, 50.0, 80.0):
+            soc = _random_soc(midpoint)
+            assert midpoint - 5.0 <= soc <= midpoint + 5.0
+
+    def test_random_soc_clamped_at_zero(self):
+        """_random_soc clamps negative values to 0."""
+        with patch("simulator_core.scenario_engine.random.uniform", return_value=-3.0):
+            assert _random_soc(2.0) == 0.0
+
+    def test_random_soc_clamped_at_100(self):
+        """_random_soc clamps values over 100 to 100."""
+        with patch("simulator_core.scenario_engine.random.uniform", return_value=103.0):
+            assert _random_soc(98.0) == 100.0
+
+    async def test_start_transaction_called_with_randomised_soc(self):
+        """run_rush_period passes the randomised SoC (not the hardcoded 20%) to start_transaction."""
+        evses = [_make_evse(1)]
+        sim = _make_sim("CP-1", "loc-1", evses)
+        vehicles = [_make_vehicle("tag-1")]
+        charger_rows = [_make_row("CP-1")]
+
+        no_sleep = AsyncMock()
+
+        with patch("simulator_core.scenario_engine.store") as mock_store, \
+             patch("simulator_core.scenario_engine.random.uniform", return_value=35.0):
+            mock_store.get_all.return_value = [sim]
+            await run_rush_period(
+                "loc-1", 1, charger_rows, vehicles,
+                start_soc_midpoint_pct=37.0,
+                sleep_fn=no_sleep,
+            )
+
+        _, kwargs = sim._ocpp_client.start_transaction.call_args
+        assert kwargs["start_soc_pct"] == pytest.approx(35.0)
+
+    async def test_each_pair_gets_independent_soc(self):
+        """Each pair's start_transaction call gets its own independently-drawn SoC."""
+        evses = [_make_evse(1), _make_evse(2)]
+        sim = _make_sim("CP-1", "loc-1", evses)
+        vehicles = [_make_vehicle("tag-1"), _make_vehicle("tag-2")]
+        charger_rows = [_make_row("CP-1")]
+
+        no_sleep = AsyncMock()
+        soc_sequence = [25.0, 18.0]
+
+        with patch("simulator_core.scenario_engine.store") as mock_store, \
+             patch("simulator_core.scenario_engine.random.uniform", side_effect=soc_sequence):
+            mock_store.get_all.return_value = [sim]
+            await run_rush_period("loc-1", 2, charger_rows, vehicles, sleep_fn=no_sleep)
+
+        calls = sim._ocpp_client.start_transaction.call_args_list
+        assert calls[0][1]["start_soc_pct"] == pytest.approx(25.0)
+        assert calls[1][1]["start_soc_pct"] == pytest.approx(18.0)

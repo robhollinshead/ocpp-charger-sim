@@ -599,11 +599,6 @@ def update_charger_config(
     sim = store_get_by_id(charge_point_id)
     if sim and isinstance(sim.config, dict):
         sim.config = {**sim.config, **updates}
-        # Propagate TxDefaultPowerW change to all EVSEs immediately
-        if "TxDefaultPowerW" in updates:
-            new_default_w = float(updates["TxDefaultPowerW"])
-            for evse in sim.evses:
-                evse.tx_default_power_W = new_default_w
     if sim is None:
         sim = _hydrate_charger(db, charge_point_id)
     if sim is None:

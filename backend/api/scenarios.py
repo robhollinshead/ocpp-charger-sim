@@ -81,6 +81,8 @@ async def start_rush_period(
             config.duration_minutes,
             charger_rows,
             vehicles,
+            num_vehicles=config.num_vehicles,
+            start_soc_midpoint_pct=config.start_soc_midpoint_pct,
         )
     )
 

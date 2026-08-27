@@ -418,3 +418,75 @@ def test_tx_profile_on_one_connector_does_not_affect_other():
     assert result_c2 is not None
     assert result_c2.limit_W == 20000.0
     assert result_c2.purpose == "TxDefaultProfile"
+
+
+# ---------------------------------------------------------------------------
+# TxDefaultProfile fallback (regression tests for dual-profile scenarios)
+# ---------------------------------------------------------------------------
+
+
+def test_tx_profile_expired_by_duration_falls_back_to_tx_default():
+    """When TxProfile expires by duration_s, TxDefaultProfile should be the result.
+
+    Regression: previously evaluate_profiles returned None instead of falling back.
+    """
+    now = _now()
+    start = now - timedelta(seconds=200)
+    # TxProfile whose duration_s=100 → elapsed=200 > 100 → expired
+    tx_profile = _absolute(
+        profile_id=1, purpose="TxProfile", transaction_id=42,
+        start_schedule=start, duration_s=100,
+        periods=[_make_period(0, 150000.0)],
+    )
+    tx_default = _absolute(
+        profile_id=2, purpose="TxDefaultProfile",
+        periods=[_make_period(0, 11000.0)],
+    )
+    result = evaluate_profiles([tx_profile, tx_default], now, 1, 42, None)
+    assert result is not None
+    assert result.purpose == "TxDefaultProfile"
+    assert result.limit_W == 11000.0
+
+
+def test_tx_profile_valid_takes_priority_over_tx_default():
+    """When TxProfile is within its duration, it wins over TxDefaultProfile."""
+    now = _now()
+    start = now - timedelta(seconds=30)
+    tx_profile = _absolute(
+        profile_id=1, purpose="TxProfile", transaction_id=42,
+        start_schedule=start, duration_s=120,
+        periods=[_make_period(0, 150000.0)],
+    )
+    tx_default = _absolute(
+        profile_id=2, purpose="TxDefaultProfile",
+        periods=[_make_period(0, 11000.0)],
+    )
+    result = evaluate_profiles([tx_profile, tx_default], now, 1, 42, None)
+    assert result is not None
+    assert result.purpose == "TxProfile"
+    assert result.limit_W == 150000.0
+
+
+def test_tx_profile_expired_by_valid_to_falls_back_to_tx_default():
+    """When TxProfile expires by valid_to, TxDefaultProfile should apply.
+
+    Regression: this is the scenario from the reported bug where a CSMS sends
+    TxDefaultProfile (11 kW) and TxProfile (150 kW) with the same profileId.
+    After TxProfile's validTo window closes, power should revert to 11 kW.
+    """
+    now = _now()
+    # TxProfile with validTo in the past → excluded by validity window filter
+    tx_profile = _absolute(
+        profile_id=1, purpose="TxProfile", transaction_id=42,
+        valid_to=now - timedelta(seconds=1),
+        periods=[_make_period(0, 150000.0)],
+    )
+    # TxDefaultProfile with same profileId (different purpose — should coexist)
+    tx_default = _absolute(
+        profile_id=1, purpose="TxDefaultProfile",
+        periods=[_make_period(0, 11000.0)],
+    )
+    result = evaluate_profiles([tx_profile, tx_default], now, 1, 42, None)
+    assert result is not None
+    assert result.purpose == "TxDefaultProfile"
+    assert result.limit_W == 11000.0

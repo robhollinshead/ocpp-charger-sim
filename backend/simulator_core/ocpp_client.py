@@ -111,7 +111,6 @@ _KNOWN_CONFIG_KEYS = frozenset({
     "LocalAuthListEnabled",
     "OCPPAuthorizationEnabled",
     "MeterValuesSampledData",
-    "TxDefaultPowerW",
 })
 
 # Keys that accept integer values.
@@ -131,9 +130,6 @@ _BOOL_CONFIG_KEYS = frozenset({
 
 # Keys that accept string values.
 _STRING_CONFIG_KEYS = frozenset({"MeterValuesSampledData"})
-
-# Keys that accept float values.
-_FLOAT_CONFIG_KEYS = frozenset({"TxDefaultPowerW"})
 
 # Map our EvseState to OCPP ChargePointStatus
 _EVSE_STATE_TO_OCPP: dict[EvseState, ChargePointStatus] = {
@@ -319,10 +315,10 @@ class SimulatorChargePoint(ChargePoint):
         config = self._charger.config
         requested = (key or []) if isinstance(key, list) else ([key] if key is not None else [])
         if not requested:
-            # Return all known keys
-            keys_to_return = [k for k in _KNOWN_CONFIG_KEYS if k in config]
-            if not keys_to_return:
-                keys_to_return = list(_KNOWN_CONFIG_KEYS)
+            # Return all known keys, regardless of whether the charger's config dict
+            # happens to have an explicit entry for each one (missing entries report
+            # value=None below, same as the explicit-key-request branch).
+            keys_to_return = list(_KNOWN_CONFIG_KEYS)
         else:
             keys_to_return = [k for k in requested if k in _KNOWN_CONFIG_KEYS]
         unknown = [k for k in requested if k not in _KNOWN_CONFIG_KEYS]
@@ -367,15 +363,6 @@ class SimulatorChargePoint(ChargePoint):
                 parsed = False
             else:
                 return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.rejected)
-        elif key in _FLOAT_CONFIG_KEYS:
-            try:
-                parsed = float(value)
-            except (ValueError, TypeError):
-                return call_result.ChangeConfigurationPayload(status=ConfigurationStatus.rejected)
-            # Propagate TxDefaultPowerW to all EVSEs immediately
-            if key == "TxDefaultPowerW":
-                for evse in self._charger.evses:
-                    evse.tx_default_power_W = parsed
         elif key in _STRING_CONFIG_KEYS:
             parsed = value
         else:
@@ -464,12 +451,15 @@ class SimulatorChargePoint(ChargePoint):
                 charging_schedule_periods=periods,
             )
 
-            # Replace any existing profile with the same (id, connector_id)
+            # Replace any existing profile with the same (id, connector_id, purpose).
+            # Purpose is included so TxDefaultProfile and TxProfile can coexist
+            # even when a CSMS reuses the same chargingProfileId across purposes.
             existing = [
                 p for p in self._charger._charging_profiles
                 if not (
                     p.charging_profile_id == profile.charging_profile_id
                     and p.connector_id == profile.connector_id
+                    and p.charging_profile_purpose == profile.charging_profile_purpose
                 )
             ]
             existing.append(profile)

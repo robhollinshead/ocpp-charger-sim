@@ -8,7 +8,7 @@
   },
   "devDependencies": {
     "@mermaid-js/mermaid-cli": "^11.0.0",
-    "playwright": "^1.49.0",
-    "md-to-pdf": "^5.2.5"
+    "md-to-pdf": "^5.2.5",
+    "playwright": "^1.49.0"
   }
 }

@@ -242,3 +242,56 @@ def test_stop_all_charging_counts_errors(client, loc_id):
     data = r.json()
     assert data["stopped"] == 0
     assert data["errors"] == 1
+
+
+# ---------------------------------------------------------------------------
+# New config param validation
+# ---------------------------------------------------------------------------
+
+def test_start_with_num_vehicles(client, loc_id):
+    """POST with num_vehicles returns 202."""
+    with patch("api.scenarios.run_rush_period", new=AsyncMock()), \
+         patch("asyncio.create_task"):
+        r = client.post(
+            f"/api/locations/{loc_id}/scenarios/rush-period",
+            json={"duration_minutes": 5, "num_vehicles": 3},
+        )
+    assert r.status_code == 202
+
+
+def test_start_with_soc_midpoint(client, loc_id):
+    """POST with start_soc_midpoint_pct returns 202."""
+    with patch("api.scenarios.run_rush_period", new=AsyncMock()), \
+         patch("asyncio.create_task"):
+        r = client.post(
+            f"/api/locations/{loc_id}/scenarios/rush-period",
+            json={"duration_minutes": 5, "start_soc_midpoint_pct": 50},
+        )
+    assert r.status_code == 202
+
+
+def test_num_vehicles_zero_is_invalid(client, loc_id):
+    """POST with num_vehicles=0 returns 422."""
+    r = client.post(
+        f"/api/locations/{loc_id}/scenarios/rush-period",
+        json={"duration_minutes": 5, "num_vehicles": 0},
+    )
+    assert r.status_code == 422
+
+
+def test_soc_midpoint_over_100_is_invalid(client, loc_id):
+    """POST with start_soc_midpoint_pct=101 returns 422."""
+    r = client.post(
+        f"/api/locations/{loc_id}/scenarios/rush-period",
+        json={"duration_minutes": 5, "start_soc_midpoint_pct": 101},
+    )
+    assert r.status_code == 422
+
+
+def test_soc_midpoint_negative_is_invalid(client, loc_id):
+    """POST with start_soc_midpoint_pct=-1 returns 422."""
+    r = client.post(
+        f"/api/locations/{loc_id}/scenarios/rush-period",
+        json={"duration_minutes": 5, "start_soc_midpoint_pct": -1},
+    )
+    assert r.status_code == 422

@@ -106,7 +106,6 @@ export interface ChargerConfigUpdate {
   LocalAuthListEnabled?: boolean;
   OCPPAuthorizationEnabled?: boolean;
   MeterValuesSampledData?: string;
-  TxDefaultPowerW?: number;
 }
 
 

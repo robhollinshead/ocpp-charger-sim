@@ -211,19 +211,28 @@ def evaluate_profiles(
     else:
         tx_profiles = []  # TxProfile never applies outside a transaction
 
-    # Step 5: Pick best (TxProfile wins over TxDefaultProfile)
-    best = _highest_stack(tx_profiles) or _highest_stack(tx_default_profiles)
+    # Steps 5-7: Select best profile with fallback.
+    # TxProfile takes priority over TxDefaultProfile. If the best TxProfile is
+    # expired (by duration_s) or inapplicable, fall back to TxDefaultProfile so
+    # that the OCPP-mandated default power is preserved.
+    best_tx = _highest_stack(tx_profiles)
+    best_default = _highest_stack(tx_default_profiles)
+
+    best: Optional[ChargingProfile] = None
+    elapsed: float = 0.0
+
+    if best_tx is not None:
+        tx_elapsed = _compute_elapsed(best_tx, now, tx_start_time)
+        if tx_elapsed is not None and (best_tx.duration_s is None or tx_elapsed <= best_tx.duration_s):
+            best, elapsed = best_tx, tx_elapsed
+
+    if best is None and best_default is not None:
+        def_elapsed = _compute_elapsed(best_default, now, tx_start_time)
+        if def_elapsed is not None and (best_default.duration_s is None or def_elapsed <= best_default.duration_s):
+            best, elapsed = best_default, def_elapsed
+
     if best is None:
-        return None  # No applicable limit profile
-
-    # Step 6: Compute elapsed time; check if profile is applicable yet
-    elapsed = _compute_elapsed(best, now, tx_start_time)
-    if elapsed is None:
-        return None  # Relative profile with no transaction start time
-
-    # Step 7: Check if duration has been exceeded
-    if best.duration_s is not None and elapsed > best.duration_s:
-        return None  # Profile has expired
+        return None
 
     # Step 8: Resolve the active schedule period
     period_idx, limit_W = _resolve_period(best.charging_schedule_periods, elapsed)

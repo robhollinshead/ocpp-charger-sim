@@ -79,10 +79,6 @@ Starting a transaction while offline uses `_start_transaction_offline()`:
 3. Patches MeterValues and StopTransaction payloads with real IDs before sending
 4. Updates live EVSE `transaction_id` to real ID so subsequent meter ticks use correct ID
 
-### TxDefaultPowerW
-
-Config key `TxDefaultPowerW` (float, default `7400.0` W) provides fallback power when no `SetChargingProfile` has been received. Stored in `charger.config`, propagated to `evse.tx_default_power_W` at init and on config update. Used by `evse.get_effective_power_W()` when `offered_limit_W == 0.0`.
-
 ### API Endpoints
 
 - `POST /chargers/{id}/go-offline` (204) — Enter offline mode: close WS, keep meter running, cache sends. Idempotent.
@@ -90,9 +86,9 @@ Config key `TxDefaultPowerW` (float, default `7400.0` W) provides fallback power
 
 ### Testing
 
-- `tests/unit/test_offline_mode.py` — ConnectivityMode, CachedMessage, TxDefaultPowerW, meter loop caching
+- `tests/unit/test_offline_mode.py` — ConnectivityMode, CachedMessage, get_effective_power_W, meter loop caching
 - `tests/unit/test_replay.py` — `replay_cached_messages`, patch helpers, full offline session, tx ID reconciliation
-- `tests/api/test_offline_api.py` — go-offline/go-online endpoints, offline start/stop transaction, TxDefaultPowerW config
+- `tests/api/test_offline_api.py` — go-offline/go-online endpoints, offline start/stop transaction
 
 ## Testing
 

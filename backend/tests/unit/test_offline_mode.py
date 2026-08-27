@@ -1,4 +1,4 @@
-"""Unit tests: offline mode — ConnectivityMode, CachedMessage, TxDefaultPowerW, meter loop caching."""
+"""Unit tests: offline mode — ConnectivityMode, CachedMessage, get_effective_power_W, meter loop caching."""
 import asyncio
 
 import pytest
@@ -124,13 +124,8 @@ def test_offline_tx_counter_is_independent_per_charger():
 
 
 # ---------------------------------------------------------------------------
-# TxDefaultPowerW
+# get_effective_power_W
 # ---------------------------------------------------------------------------
-
-
-def test_evse_default_tx_power_w_is_7400():
-    evse = EVSE(evse_id=1)
-    assert evse.tx_default_power_W == 7400.0
 
 
 def test_get_effective_power_w_no_override_returns_zero():
@@ -158,28 +153,7 @@ def test_get_effective_power_w_suspended_returns_zero():
     evse = EVSE(evse_id=1)
     evse.state = EvseState.SuspendedEV
     evse.offered_limit_W = 22000.0
-    evse.tx_default_power_W = 7400.0
     assert evse.get_effective_power_W() == 0.0
-
-
-def test_charger_propagates_tx_default_power_to_evses():
-    evse = EVSE(evse_id=1)
-    charger = Charger(
-        charge_point_id="CP-1",
-        evses=[evse],
-        config={"TxDefaultPowerW": 11000.0},
-    )
-    assert evse.tx_default_power_W == 11000.0
-
-
-def test_charger_get_tx_default_power_w():
-    charger = Charger(charge_point_id="CP-1", config={"TxDefaultPowerW": 15000.0})
-    assert charger.get_tx_default_power_w() == 15000.0
-
-
-def test_charger_get_tx_default_power_w_fallback():
-    charger = Charger(charge_point_id="CP-1")
-    assert charger.get_tx_default_power_w() == 7400.0
 
 
 # ---------------------------------------------------------------------------

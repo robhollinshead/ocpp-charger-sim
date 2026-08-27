@@ -26,7 +26,6 @@ const EDITABLE_KEYS: EditableKeyDef[] = [
   { key: 'AuthorizeRemoteTxRequests', type: 'boolean', label: 'AuthorizeRemoteTxRequests' },
   { key: 'LocalAuthListEnabled', type: 'boolean', label: 'LocalAuthListEnabled' },
   { key: 'OCPPAuthorizationEnabled', type: 'boolean', label: 'OCPPAuthorizationEnabled' },
-  { key: 'TxDefaultPowerW', type: 'number', label: 'TxDefaultPowerW' },
 ];
 
 const DEFAULT_MEASURANDS_DC = 'Energy.Active.Import.Register,Power.Active.Import,Current.Import,SoC';
