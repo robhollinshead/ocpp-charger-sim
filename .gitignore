@@ -1,6 +1,9 @@
 # SQLite dev database
 *.db
 
+# Persisted charging profiles (runtime state)
+backend/data/
+
 # Python
 __pycache__/
 .venv/
