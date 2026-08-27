@@ -56,6 +56,18 @@ async def test_get_configuration_no_keys_returns_all_known(charge_point):
 
 
 @pytest.mark.asyncio
+async def test_get_configuration_no_keys_includes_keys_absent_from_config(charge_point):
+    """A full GetConfiguration must still list known keys the charger's config dict
+    has no entry for (e.g. MeterValuesSampledData, which is only populated at charger
+    creation time based on power_type) — reported with value=None, not omitted."""
+    assert "MeterValuesSampledData" not in charge_point._charger.config
+    result = await charge_point.on_get_configuration(key=None)
+    keys_returned = {kv.key: kv for kv in result.configuration_key}
+    assert "MeterValuesSampledData" in keys_returned
+    assert keys_returned["MeterValuesSampledData"].value is None
+
+
+@pytest.mark.asyncio
 async def test_get_configuration_specific_keys(charge_point):
     """GetConfiguration with specific keys returns those known and unknown_key for rest."""
     result = await charge_point.on_get_configuration(key=["HeartbeatInterval", "UnknownKey", "MeterValuesSampleInterval"])

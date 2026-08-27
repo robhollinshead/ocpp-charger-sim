@@ -71,10 +71,10 @@ The metering loop continues running at the configured `MeterValuesSampleInterval
 
 ### Power Determination
 
-Charging power is determined by (in priority order):
+Charging power is determined entirely by the active charging profile (`TxProfile` / `TxDefaultProfile` / `ChargePointMaxProfile`, evaluated via `evaluate_profiles()`):
 
 1. **Active TxProfile** — if `SetChargingProfile` was received before going offline, `offered_limit_W` is used
-2. **TxDefaultPowerW** — if no charging profile was received, this config value is used as the fallback (default: 7400 W = 7.4 kW)
+2. **No applicable profile** — if no charging profile applies, the EVSE suspends (`SuspendedEVSE`) and delivers 0 W
 
 ### Starting a Transaction While Offline
 
@@ -124,34 +124,6 @@ The CSMS receives a coherent history as if the charger had been online the whole
 
 ---
 
-## TxDefaultPowerW Configuration
-
-`TxDefaultPowerW` is the fallback charging power (in Watts) used when no `SetChargingProfile` has been received from the CSMS.
-
-**Default value:** 7400 W (7.4 kW, typical for a 32A single-phase AC charger)
-
-### Setting via API
-
-```bash
-PATCH /api/chargers/{charge_point_id}/config
-{ "TxDefaultPowerW": 22000 }
-```
-
-### Setting via UI
-
-In the Configuration tab, `TxDefaultPowerW` appears as a numeric field.
-
-### Setting via OCPP ChangeConfiguration
-
-The CSMS can also update this value:
-```json
-{ "key": "TxDefaultPowerW", "value": "11000" }
-```
-
-Changes are applied immediately to all EVSEs on the charger.
-
----
-
 ## Edge Cases
 
 | Scenario | Behaviour |
@@ -162,7 +134,7 @@ Changes are applied immediately to all EVSEs on the charger.
 | Stop transaction while offline | StopTransaction cached; EVSE returns to Available |
 | Long offline duration | All MeterValues cached (no limit); replayed in full on reconnect |
 | Reconnect fails (CSMS down) | Connect loop retries with exponential backoff once in ONLINE mode |
-| `TxDefaultPowerW = 0` | Zero power charged while offline; energy does not advance |
+| No applicable charging profile while offline | Zero power charged; energy does not advance |
 | Multiple EVSEs with separate transactions | Each EVSE's messages cached independently; replayed in interleaved order |
 
 ---

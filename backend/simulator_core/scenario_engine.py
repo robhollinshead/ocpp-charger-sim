@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine, Optional
@@ -58,6 +59,11 @@ def clear_all() -> None:
 # Helper types
 # ---------------------------------------------------------------------------
 
+def _random_soc(midpoint: float) -> float:
+    """Return a SoC within ±5% of midpoint, clamped to [0, 100]."""
+    return max(0.0, min(100.0, random.uniform(midpoint - 5.0, midpoint + 5.0)))
+
+
 ConnectFn = Callable[..., Coroutine[Any, Any, None]]
 SleepFn = Callable[[float], Coroutine[Any, Any, None]]
 
@@ -105,6 +111,8 @@ async def run_rush_period(
     charger_rows: list[ChargerRow],
     vehicles: list[VehicleRow],
     *,
+    num_vehicles: int | None = None,
+    start_soc_midpoint_pct: float = 20.0,
     connect_fn: ConnectFn = connect_charge_point,
     sleep_fn: SleepFn = asyncio.sleep,
 ) -> ScenarioRun:
@@ -166,6 +174,8 @@ async def run_rush_period(
 
     # Step 4: Pair and schedule
     num_pairs = min(len(available_evses), len(vehicle_tags))
+    if num_vehicles is not None:
+        num_pairs = min(num_pairs, num_vehicles)
     run.total_pairs = num_pairs
 
     if num_pairs == 0:
@@ -195,7 +205,7 @@ async def run_rush_period(
             await charger_sim._ocpp_client.start_transaction(
                 evse_id,
                 id_tag,
-                start_soc_pct=20.0,
+                start_soc_pct=_random_soc(start_soc_midpoint_pct),
                 battery_capacity_kwh=battery_kwh,
             )
             run.completed_pairs += 1

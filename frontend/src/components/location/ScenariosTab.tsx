@@ -30,6 +30,8 @@ function StatusBadge({ status }: { status: string }) {
 
 export function ScenariosTab({ locationId }: ScenariosTabProps) {
   const [durationMinutes, setDurationMinutes] = useState(5);
+  const [numVehicles, setNumVehicles] = useState<number | undefined>(undefined);
+  const [startSocMidpoint, setStartSocMidpoint] = useState(20);
 
   // Poll every 2 s — the endpoint is lightweight and keeps progress up to date
   const { data: activeScenario, isLoading: scenarioLoading } = useActiveScenario(locationId, 2000);
@@ -42,7 +44,11 @@ export function ScenariosTab({ locationId }: ScenariosTabProps) {
 
   async function handleStartRushPeriod() {
     try {
-      await startRushPeriod.mutateAsync(durationMinutes);
+      await startRushPeriod.mutateAsync({
+        duration_minutes: durationMinutes,
+        num_vehicles: numVehicles,
+        start_soc_midpoint_pct: startSocMidpoint,
+      });
       toast.success('Rush Period scenario started');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to start scenario');
@@ -119,7 +125,7 @@ export function ScenariosTab({ locationId }: ScenariosTabProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Config */}
-          <div className="flex items-end gap-4">
+          <div className="flex items-end gap-4 flex-wrap">
             <div className="space-y-1.5 w-40">
               <Label htmlFor="duration">Duration (minutes)</Label>
               <Input
@@ -129,6 +135,37 @@ export function ScenariosTab({ locationId }: ScenariosTabProps) {
                 max={480}
                 value={durationMinutes}
                 onChange={(e) => setDurationMinutes(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                disabled={scenarioIsRunning}
+              />
+            </div>
+            <div className="space-y-1.5 w-40">
+              <Label htmlFor="num-vehicles">Vehicles to plug in</Label>
+              <Input
+                id="num-vehicles"
+                type="number"
+                min={1}
+                placeholder="All available"
+                value={numVehicles ?? ''}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  setNumVehicles(isNaN(v) || v < 1 ? undefined : v);
+                }}
+                disabled={scenarioIsRunning}
+              />
+            </div>
+            <div className="space-y-1.5 w-40">
+              <Label htmlFor="start-soc">Start SoC midpoint (%)</Label>
+              <Input
+                id="start-soc"
+                type="number"
+                min={0}
+                max={100}
+                step={5}
+                value={startSocMidpoint}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v)) setStartSocMidpoint(Math.min(100, Math.max(0, v)));
+                }}
                 disabled={scenarioIsRunning}
               />
             </div>

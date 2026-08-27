@@ -103,11 +103,9 @@ class Charger:
         self._offline_tx_counter: int = 0  # Counts down: 0, -1, -2, ... for offline transaction IDs
         self._meter_tasks: dict[int, Any] = {}  # connector_id -> (task, stop_event); lives on Charger so it survives reconnects
         self._charging_profiles: list[Any] = []  # list[ChargingProfile]; populated by profile store on startup
-        # Propagate power_type and TxDefaultPowerW to EVSEs
-        tx_default_w = self.get_tx_default_power_w()
+        # Propagate power_type to EVSEs
         for evse in self.evses:
             evse.power_type = power_type
-            evse.tx_default_power_W = tx_default_w
 
     def set_vehicle_resolver(
         self, resolver: Optional[Callable[[str], Optional[tuple[float, float]]]]
@@ -210,10 +208,6 @@ class Charger:
     async def wait_for_online(self) -> None:
         """Suspend the caller until set_online() is called (used by the connect loop)."""
         await self._online_event.wait()
-
-    def get_tx_default_power_w(self) -> float:
-        """Fallback charging power (W) when no SetChargingProfile has been received (default 7400 W)."""
-        return float(self.config.get("TxDefaultPowerW", 7400.0))
 
     # --------------- Offline message cache ---------------
 

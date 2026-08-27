@@ -74,7 +74,6 @@ class ChargerConfigUpdate(BaseModel):
     LocalAuthListEnabled: bool | None = None
     OCPPAuthorizationEnabled: bool | None = None
     MeterValuesSampledData: str | None = None
-    TxDefaultPowerW: float | None = None
 
 
 class MeterSnapshot(BaseModel):

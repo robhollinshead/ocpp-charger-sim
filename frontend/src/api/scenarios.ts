@@ -20,15 +20,21 @@ export interface StopAllChargingResponse {
   errors: number;
 }
 
+export interface RushPeriodConfig {
+  duration_minutes: number;
+  num_vehicles?: number;
+  start_soc_midpoint_pct?: number;
+}
+
 export async function startRushPeriod(
   locationId: string,
-  durationMinutes: number
+  config: RushPeriodConfig
 ): Promise<ScenarioRunResponse> {
   return apiFetch<ScenarioRunResponse>(
     `${API_PREFIX}/locations/${locationId}/scenarios/rush-period`,
     {
       method: 'POST',
-      body: JSON.stringify({ duration_minutes: durationMinutes }),
+      body: JSON.stringify(config),
     }
   );
 }
@@ -73,7 +79,7 @@ export function useActiveScenario(
 export function useStartRushPeriod(locationId: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (durationMinutes: number) => startRushPeriod(locationId!, durationMinutes),
+    mutationFn: (config: RushPeriodConfig) => startRushPeriod(locationId!, config),
     onSuccess: () => {
       if (locationId) {
         queryClient.invalidateQueries({ queryKey: activeScenarioQueryKey(locationId) });

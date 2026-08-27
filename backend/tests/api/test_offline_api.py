@@ -290,22 +290,3 @@ def test_stop_transaction_offline_returns_404_when_no_active_tx(client, charger_
     )
     assert r.status_code == 400
     assert "no active transaction" in r.json()["detail"].lower()
-
-
-# ---------------------------------------------------------------------------
-# TxDefaultPowerW config
-# ---------------------------------------------------------------------------
-
-
-def test_update_config_tx_default_power_w(client, charger_in_store):
-    """PATCH /config accepts TxDefaultPowerW and propagates to EVSEs."""
-    r = client.patch(
-        f"/api/chargers/{CP_ID}/config",
-        json={"TxDefaultPowerW": 11000.0},
-    )
-    assert r.status_code == 200
-    sim = store_get(CP_ID)
-    assert sim is not None
-    assert sim.config.get("TxDefaultPowerW") == 11000.0
-    for evse in sim.evses:
-        assert evse.tx_default_power_W == 11000.0

@@ -64,7 +64,6 @@ class EVSE:
         "battery_capacity_Wh",
         "soc_pct",
         "power_type",
-        "tx_default_power_W",
         "tx_profile_valid_to",
     )
 
@@ -89,7 +88,6 @@ class EVSE:
         self.battery_capacity_Wh = 100_000.0
         self.soc_pct = 20.0
         self.power_type = power_type  # "AC" or "DC", propagated from parent Charger
-        self.tx_default_power_W = 7400.0  # Fallback power (W) when no SetChargingProfile received; propagated from Charger config
         self.tx_profile_valid_to: Optional[datetime] = None  # expiry of the active TxProfile; None = no expiry set
 
     def transition_to(self, new_state: EvseState) -> bool:
@@ -107,7 +105,7 @@ class EVSE:
 
     def set_offered_limit_W(self, limit_W: float, valid_to: Optional[datetime] = None) -> None:
         """Apply power limit from SetChargingProfile (FR-5). CSMS limit is stored as-is for simulation.
-        valid_to is the profile expiry; when it passes, get_effective_power_W falls back to tx_default_power_W.
+        valid_to is the profile expiry.
         """
         self.offered_limit_W = max(0.0, limit_W)
         self.tx_profile_valid_to = valid_to
