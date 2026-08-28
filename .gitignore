@@ -19,6 +19,9 @@ build/
 *.swp
 *.swo
 
+# Claude Code local settings (personal permissions, machine-specific)
+.claude/settings.local.json
+
 # Env (keep .env.example)
 .env
 .env.local
